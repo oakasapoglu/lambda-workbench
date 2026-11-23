@@ -1,0 +1,2553 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="github-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>λ workbench</title>
+<style>
+/* =====================================================================
+   THEMES
+   Each theme defines the same set of CSS variables. Press T to cycle.
+   ===================================================================== */
+:root,
+[data-theme="github-dark"] {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --bg-side: #010409;
+  --bg-raised: #161b22;
+  --bg-hover: #1f2630;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-muted: #7d8590;
+  --accent: #2f81f7;
+  --accent-fg: #ffffff;
+  --lambda: #ff7b72;
+  --param: #79c0ff;
+  --var: #e6edf3;
+  --ref: #d2a8ff;
+  --free: #ffa657;
+  --paren: #6e7681;
+  --redex: rgba(210, 153, 34, 0.24);
+  --fresh: rgba(63, 185, 80, 0.38);
+  --link: rgba(56, 139, 253, 0.28);
+  --ok: #3fb950;
+  --err: #f85149;
+  --status-bg: #161b22;
+  --status-fg: #7d8590;
+}
+
+[data-theme="tokyo-night"] {
+  color-scheme: dark;
+  --bg: #1a1b26;
+  --bg-side: #16161e;
+  --bg-raised: #1f2335;
+  --bg-hover: #292e42;
+  --border: #2a2e42;
+  --fg: #c0caf5;
+  --fg-muted: #737aa2;
+  --accent: #7aa2f7;
+  --accent-fg: #1a1b26;
+  --lambda: #bb9af7;
+  --param: #7dcfff;
+  --var: #c0caf5;
+  --ref: #ff9e64;
+  --free: #e0af68;
+  --paren: #565f89;
+  --redex: rgba(224, 175, 104, 0.20);
+  --fresh: rgba(158, 206, 106, 0.32);
+  --link: rgba(122, 162, 247, 0.26);
+  --ok: #9ece6a;
+  --err: #f7768e;
+  --status-bg: #16161e;
+  --status-fg: #737aa2;
+}
+
+[data-theme="monokai"] {
+  color-scheme: dark;
+  --bg: #272822;
+  --bg-side: #1e1f1c;
+  --bg-raised: #34352d;
+  --bg-hover: #3e3d32;
+  --border: #464741;
+  --fg: #f8f8f2;
+  --fg-muted: #90908a;
+  --accent: #66d9ef;
+  --accent-fg: #272822;
+  --lambda: #f92672;
+  --param: #fd971f;
+  --var: #f8f8f2;
+  --ref: #ae81ff;
+  --free: #e6db74;
+  --paren: #75715e;
+  --redex: rgba(230, 219, 116, 0.20);
+  --fresh: rgba(166, 226, 46, 0.32);
+  --link: rgba(102, 217, 239, 0.24);
+  --ok: #a6e22e;
+  --err: #f92672;
+  --status-bg: #1e1f1c;
+  --status-fg: #90908a;
+}
+
+[data-theme="gruvbox"] {
+  color-scheme: dark;
+  --bg: #282828;
+  --bg-side: #1d2021;
+  --bg-raised: #32302f;
+  --bg-hover: #3c3836;
+  --border: #504945;
+  --fg: #ebdbb2;
+  --fg-muted: #a89984;
+  --accent: #83a598;
+  --accent-fg: #1d2021;
+  --lambda: #fb4934;
+  --param: #83a598;
+  --var: #ebdbb2;
+  --ref: #d3869b;
+  --free: #fabd2f;
+  --paren: #7c6f64;
+  --redex: rgba(250, 189, 47, 0.20);
+  --fresh: rgba(184, 187, 38, 0.32);
+  --link: rgba(131, 165, 152, 0.30);
+  --ok: #b8bb26;
+  --err: #fb4934;
+  --status-bg: #1d2021;
+  --status-fg: #a89984;
+}
+
+[data-theme="gruvbox-light"] {
+  color-scheme: light;
+  --bg: #f2e5bc;
+  --bg-side: #ebdbb2;
+  --bg-raised: #fbf1c7;
+  --bg-hover: #e5d5ad;
+  --border: #d5c4a1;
+  --fg: #3c3836;
+  --fg-muted: #7c6f64;
+  --accent: #076678;
+  --accent-fg: #fbf1c7;
+  --lambda: #9d0006;
+  --param: #076678;
+  --var: #3c3836;
+  --ref: #8f3f71;
+  --free: #b57614;
+  --paren: #a89984;
+  --redex: rgba(215, 153, 33, 0.30);
+  --fresh: rgba(121, 116, 14, 0.28);
+  --link: rgba(7, 102, 120, 0.20);
+  --ok: #79740e;
+  --err: #9d0006;
+  --status-bg: #ebdbb2;
+  --status-fg: #7c6f64;
+}
+
+/* =====================================================================
+   BASE LAYOUT
+   ===================================================================== */
+:root {
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-code: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --expr-size: 22px;
+  --left-width: 250px;
+  --right-width: 380px;
+  --rail-width: 24px;
+}
+
+body.left-closed {
+  --left-width: var(--rail-width);
+}
+
+body.right-closed {
+  --right-width: var(--rail-width);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.5 var(--font-ui);
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  background: var(--bg-side);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-name {
+  font-family: var(--font-code);
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.app-name .lambda {
+  color: var(--lambda);
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: var(--left-width) minmax(0, 1fr) var(--right-width);
+  min-height: 0;
+}
+
+.side {
+  background: var(--bg-side);
+  overflow: auto;
+  min-width: 0;
+}
+
+.pane-content {
+  padding: 10px 0;
+}
+
+.pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 6px 8px 12px;
+}
+
+.pane-header .pane-title {
+  margin: 0;
+}
+
+.pane-toggle {
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 0 6px;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.pane-toggle:hover {
+  color: var(--fg);
+}
+
+/* The slim strip left behind when a side pane is collapsed. */
+.rail {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  padding: 10px 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: var(--fg-muted);
+  opacity: 0.6;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+.rail:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+
+.rail-arrow {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.rail-label {
+  writing-mode: vertical-rl;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+#favPane .rail-label {
+  transform: rotate(180deg);
+}
+
+body.left-closed #favPane .pane-content,
+body.right-closed #histPane .pane-content {
+  display: none;
+}
+
+body.left-closed #favPane .rail,
+body.right-closed #histPane .rail {
+  display: flex;
+}
+
+body.left-closed #favPane,
+body.right-closed #histPane {
+  overflow: hidden;
+}
+
+#favPane {
+  border-right: 1px solid var(--border);
+}
+
+#histPane {
+  border-left: 1px solid var(--border);
+}
+
+.main {
+  overflow: auto;
+  min-width: 0;
+  padding: 16px 20px;
+}
+
+.pane-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin: 0 12px 8px;
+}
+
+@media (max-width: 900px) {
+  body {
+    height: auto;
+  }
+
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #favPane,
+  #histPane {
+    border: none;
+    border-top: 1px solid var(--border);
+    max-height: 50vh;
+  }
+
+  #favPane {
+    order: 2;
+  }
+
+  #histPane {
+    order: 3;
+  }
+
+  .rail {
+    flex-direction: row;
+    justify-content: center;
+    padding: 6px 12px;
+  }
+
+  .rail-label,
+  #favPane .rail-label {
+    writing-mode: horizontal-tb;
+    transform: none;
+  }
+}
+
+/* =====================================================================
+   CONTROLS
+   ===================================================================== */
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--bg-hover);
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+button.primary:hover {
+  filter: brightness(1.1);
+}
+
+input {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-family: var(--font-code);
+}
+
+input:focus,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+kbd {
+  font-family: var(--font-code);
+  font-size: 10px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--fg-muted);
+  margin-left: 4px;
+}
+
+button.primary kbd {
+  color: inherit;
+  border-color: currentColor;
+  opacity: 0.7;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.toolbar label {
+  color: var(--fg-muted);
+  margin-left: 6px;
+}
+
+#limit {
+  width: 64px;
+  margin-left: 4px;
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+
+.msg {
+  font-size: 12px;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.err {
+  color: var(--err);
+}
+
+/* =====================================================================
+   FAVORITES
+   ===================================================================== */
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  text-align: left;
+}
+
+.group-header .chevron {
+  display: inline-block;
+  width: 10px;
+  transition: transform 0.15s;
+}
+
+.group-header.collapsed .chevron {
+  transform: rotate(-90deg);
+}
+
+.fav {
+  display: flex;
+  align-items: center;
+}
+
+.fav:hover {
+  background: var(--bg-hover);
+}
+
+.fav .use {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  min-width: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 2px 6px 2px 26px;
+  text-align: left;
+  font-family: var(--font-code);
+}
+
+.fav .name {
+  color: var(--ref);
+  font-weight: 600;
+}
+
+.fav .src {
+  color: var(--fg-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fav .delete {
+  visibility: hidden;
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  padding: 0 10px;
+}
+
+.fav:hover .delete,
+.fav:focus-within .delete {
+  visibility: visible;
+}
+
+.fav .delete:hover {
+  color: var(--err);
+}
+
+.fav-actions {
+  padding: 0 12px;
+  margin-top: 14px;
+}
+
+#importMsg {
+  padding: 0 12px;
+}
+
+/* =====================================================================
+   EXPRESSION
+   ===================================================================== */
+.expr-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  min-height: 24px;
+}
+
+.alias-pill {
+  font-family: var(--font-code);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ok);
+  border: 1px solid var(--ok);
+  border-radius: 999px;
+  padding: 0 10px;
+}
+
+.next-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+#expr {
+  font-family: var(--font-code);
+  font-size: var(--expr-size);
+  line-height: 2;
+  min-height: 140px;
+  padding: 18px 22px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  word-break: break-word;
+}
+
+#expr:empty::before {
+  content: "Click a favorite on the left, or type a term below.";
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--fg-muted);
+}
+
+.t {
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+
+.t.hover {
+  background: var(--bg-hover);
+}
+
+.t.redex {
+  background: var(--redex);
+}
+
+.t.sel {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.t.fresh {
+  animation: fresh-glow 0.9s ease-out;
+}
+
+@keyframes fresh-glow {
+  from {
+    background: var(--fresh);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.var {
+  color: var(--var);
+}
+
+.var.ref {
+  color: var(--ref);
+  font-weight: 600;
+}
+
+.var.free {
+  color: var(--free);
+  font-style: italic;
+}
+
+.bind .lambda-sign {
+  color: var(--lambda);
+}
+
+.bind .param {
+  color: var(--param);
+}
+
+.bind .dot {
+  color: var(--paren);
+}
+
+.paren {
+  color: var(--paren);
+}
+
+.link {
+  background: var(--link);
+  border-radius: 3px;
+}
+
+/* A saved name shown as its full definition (names toggled off with N). */
+.expanded {
+  border-bottom: 1px dotted var(--ref);
+}
+
+#status {
+  margin-top: 8px;
+  min-height: 1.5em;
+}
+
+.tools {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+#termInput {
+  flex: 1;
+  min-width: 220px;
+}
+
+#saveName {
+  width: 130px;
+}
+
+.help {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* =====================================================================
+   HISTORY
+   ===================================================================== */
+#hist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-code);
+  font-size: 12px;
+}
+
+#hist li {
+  display: grid;
+  grid-template-columns: 2.8em 1.4em minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 12px 2px 9px;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+
+#hist li:hover {
+  background: var(--bg-hover);
+}
+
+#hist li.current {
+  background: var(--bg-hover);
+  border-left-color: var(--accent);
+}
+
+#hist .num {
+  color: var(--fg-muted);
+  text-align: right;
+}
+
+#hist .kind {
+  color: var(--lambda);
+  text-align: center;
+}
+
+#hist .text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#hist .alias {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+/* =====================================================================
+   STATUS BAR
+   ===================================================================== */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  background: var(--status-bg);
+  color: var(--status-fg);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.statusbar button {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 3px 8px;
+  color: inherit;
+}
+
+.statusbar button:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.statusbar .item {
+  padding: 3px 8px;
+}
+
+.statusbar .hints {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.statusbar .hints b {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* =====================================================================
+   SHORTCUTS POPUP (?)
+   ===================================================================== */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+.help-card {
+  min-width: 340px;
+  max-width: 92vw;
+  max-height: 85vh;
+  overflow: auto;
+  padding: 18px 22px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.help-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.help-card-header h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.help-card h3 {
+  margin: 14px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.keys-grid {
+  display: grid;
+  grid-template-columns: 10em 1fr;
+  gap: 6px 18px;
+  align-items: baseline;
+}
+
+.keys-grid .keys {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.keys-grid kbd {
+  font-size: 11px;
+  padding: 1px 6px;
+  color: var(--fg);
+  margin: 0 0 0 3px;
+}
+</style>
+</head>
+<body>
+
+<header class="titlebar">
+  <span class="app-name"><span class="lambda">λ</span> workbench</span>
+  <div class="toolbar">
+    <button id="stepBtn" class="primary">Step<kbd>Space</kbd></button>
+    <button id="undoBtn">Undo<kbd>⌫</kbd></button>
+    <button id="evalBtn">Eval<kbd>⏎</kbd></button>
+    <button id="clearBtn">Clear</button>
+    <label>limit<input id="limit" type="number" min="1"></label>
+  </div>
+</header>
+
+<div class="workspace">
+  <aside id="favPane" class="side">
+    <button class="rail" id="favRail" title="Open favorites (F cycles layouts)">
+      <span class="rail-arrow">›</span>
+      <span class="rail-label">Favorites</span>
+    </button>
+    <div class="pane-content">
+      <div class="pane-header">
+        <h2 class="pane-title">Favorites</h2>
+        <button class="pane-toggle" id="favCollapse" title="Collapse favorites">‹</button>
+      </div>
+      <div id="favs"></div>
+      <div class="row fav-actions">
+        <button id="exportBtn">Export</button>
+        <button id="importBtn">Import</button>
+        <button id="defaultsBtn" title="Restore missing or changed default definitions">Defaults</button>
+        <input type="file" id="importFile" accept=".txt,text/plain" hidden>
+      </div>
+      <div id="importMsg" class="msg"></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="expr-header">
+      <h2 class="pane-title" style="margin: 0">Expression</h2>
+      <span id="aliasPill" class="alias-pill" hidden></span>
+      <span id="nextHint" class="next-hint"></span>
+    </div>
+    <div id="expr"></div>
+    <div id="status" class="msg"></div>
+
+    <div class="tools">
+      <div class="row">
+        <input id="termInput" placeholder="Type a term, e.g.  PLUS 2 3   or   \x y.x   then press Enter" spellcheck="false">
+      </div>
+      <div class="row">
+        <input id="saveName" placeholder="NAME" spellcheck="false">
+        <button id="saveBtn">Save as favorite</button>
+        <span id="saveMsg" class="msg"></span>
+      </div>
+      <div class="help">
+        Click a favorite to replace the selected subterm, or to apply the whole expression to it.
+        Shift-click applies the selected subterm to it instead.
+        Hover a variable to see its binder. Highlighted subterms fire next.
+        <div class="row">
+          <button id="testBtn">Run tests</button>
+          <span id="testMsg" class="msg"></span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <aside id="histPane" class="side">
+    <button class="rail" id="histRail" title="Open history (F cycles layouts)">
+      <span class="rail-arrow">‹</span>
+      <span class="rail-label">History</span>
+    </button>
+    <div class="pane-content">
+      <div class="pane-header">
+        <h2 class="pane-title">History</h2>
+        <button class="pane-toggle" id="histCollapse" title="Collapse history">›</button>
+      </div>
+      <ol id="hist"></ol>
+    </div>
+  </aside>
+</div>
+
+<footer class="statusbar">
+  <button id="themeBtn" title="Cycle theme (T)"></button>
+  <button id="layoutBtn" title="Cycle pane layout (F)"></button>
+  <button id="namesBtn" title="Show names or full λ terms (N)"></button>
+  <span id="zoomInfo" class="item" title="Zoom with + and −, reset with 0"></span>
+  <span id="stepInfo" class="item"></span>
+  <span class="hints">
+    <b>Space</b> step · <b>⇧Space</b> back · <b>⏎</b> eval · <b>T</b> theme · <b>F</b> layout · <b>N</b> names · <b>?</b> all keys
+  </span>
+</footer>
+
+<div id="helpOverlay" class="overlay" hidden>
+  <div class="help-card" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="help-card-header">
+      <h2 id="helpTitle">Keyboard shortcuts</h2>
+      <button class="pane-toggle" id="helpClose" title="Close (Esc)">×</button>
+    </div>
+
+    <h3>Reduction</h3>
+    <div class="keys-grid">
+      <span class="keys"><kbd>Space</kbd></span><span>one reduction step</span>
+      <span class="keys"><kbd>⇧ Space</kbd> <kbd>⌫</kbd></span><span>undo one step</span>
+      <span class="keys"><kbd>⏎</kbd></span><span>evaluate to normal form (up to the limit)</span>
+    </div>
+
+    <h3>Building terms</h3>
+    <div class="keys-grid">
+      <span class="keys">click subterm</span><span>select it (click again to deselect)</span>
+      <span class="keys"><kbd>Esc</kbd></span><span>clear the selection</span>
+      <span class="keys"><kbd>Del</kbd></span><span>remove the selected subterm</span>
+      <span class="keys">click favorite</span><span>replace selection, or apply the expression to it</span>
+      <span class="keys">⇧ click favorite</span><span>apply the selected subterm to it</span>
+    </div>
+
+    <h3>View</h3>
+    <div class="keys-grid">
+      <span class="keys"><kbd>T</kbd></span><span>next theme</span>
+      <span class="keys"><kbd>F</kbd></span><span>pane layout: both → focus → history only → favorites only</span>
+      <span class="keys"><kbd>N</kbd></span><span>show saved names, or their full λ definitions</span>
+      <span class="keys"><kbd>+</kbd> <kbd>−</kbd></span><span>zoom the expression</span>
+      <span class="keys"><kbd>0</kbd></span><span>reset zoom</span>
+      <span class="keys"><kbd>?</kbd></span><span>show or hide this list</span>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* =====================================================================
+   CORE — pure functions only. No DOM access anywhere in this section.
+   ===================================================================== */
+
+const STEP_LIMIT = 100;    // default limit for Eval
+const MAX_SIZE = 20000;    // stop reducing once a term has more nodes than this
+const MAX_NUMERAL = 1000;  // digit names above this are not turned into Church numerals
+
+/* ---------- Term constructors ---------- */
+
+function Var(name) {
+  return { type: 'var', name: name };
+}
+
+function Lam(param, body) {
+  return { type: 'lam', param: param, body: body };
+}
+
+function App(fn, arg) {
+  return { type: 'app', fn: fn, arg: arg };
+}
+
+// Names that start with an uppercase letter or a digit refer to saved terms.
+function isRef(name) {
+  return /^[A-Z0-9]/.test(name);
+}
+
+/* ---------- Parser ---------- */
+
+function tokenize(source) {
+  const tokens = [];
+  let i = 0;
+
+  while (i < source.length) {
+    const ch = source[i];
+
+    if (/\s/.test(ch)) {
+      i += 1;
+      continue;
+    }
+    if (ch === 'λ' || ch === '\\') {
+      tokens.push({ kind: 'lambda', pos: i });
+      i += 1;
+      continue;
+    }
+    if (ch === '.' || ch === '(' || ch === ')') {
+      tokens.push({ kind: ch, pos: i });
+      i += 1;
+      continue;
+    }
+
+    const match = /^(?:[a-z_][A-Za-z0-9_']*|[A-Z][A-Za-z0-9_]*|[0-9]+)/.exec(source.slice(i));
+    if (!match) {
+      throw new SyntaxError(`unexpected '${ch}' at col ${i + 1}`);
+    }
+    const word = match[0];
+    tokens.push({ kind: isRef(word) ? 'ref' : 'ident', value: word, pos: i });
+    i += word.length;
+  }
+
+  tokens.push({ kind: 'end', pos: source.length });
+  return tokens;
+}
+
+function parse(source) {
+  const tokens = tokenize(source);
+  let index = 0;
+
+  function peek() {
+    return tokens[index];
+  }
+
+  function advance() {
+    const token = tokens[index];
+    index += 1;
+    return token;
+  }
+
+  function fail(message) {
+    throw new SyntaxError(`${message} at col ${peek().pos + 1}`);
+  }
+
+  function describe(token) {
+    if (token.kind === 'end') {
+      return 'end of input';
+    }
+    return `'${token.value || token.kind}'`;
+  }
+
+  // term := 'λ' ident+ '.' term  |  application
+  function parseTerm() {
+    if (peek().kind === 'lambda') {
+      return parseLambda();
+    }
+    return parseApplication();
+  }
+
+  function parseLambda() {
+    advance(); // λ
+    const params = [];
+    while (peek().kind === 'ident') {
+      params.push(advance().value);
+    }
+    if (params.length === 0) {
+      fail('expected a parameter name');
+    }
+    if (peek().kind !== '.') {
+      fail("expected '.'");
+    }
+    advance(); // .
+    const body = parseTerm();
+
+    // λx y.b  is shorthand for  λx.λy.b
+    let result = body;
+    for (let i = params.length - 1; i >= 0; i -= 1) {
+      result = Lam(params[i], result);
+    }
+    return result;
+  }
+
+  // application := atom+   (left-associative; a trailing λ takes the rest)
+  function parseApplication() {
+    let result = null;
+
+    while (true) {
+      const kind = peek().kind;
+      let atom;
+
+      if (kind === 'ident' || kind === 'ref') {
+        atom = Var(advance().value);
+      } else if (kind === '(') {
+        advance();
+        atom = parseTerm();
+        if (peek().kind !== ')') {
+          fail("expected ')'");
+        }
+        advance();
+      } else if (kind === 'lambda') {
+        atom = parseLambda();
+      } else {
+        break;
+      }
+
+      result = result === null ? atom : App(result, atom);
+    }
+
+    if (result === null) {
+      fail(`unexpected ${describe(peek())}`);
+    }
+    return result;
+  }
+
+  const term = parseTerm();
+  if (peek().kind !== 'end') {
+    fail(`unexpected ${describe(peek())}`);
+  }
+  return term;
+}
+
+/* ---------- Printer ---------- */
+
+// role is 'fn' (left side of an application) or 'arg' (right side).
+function needsParens(child, role) {
+  if (role === 'fn') {
+    return child.type === 'lam';
+  }
+  return child.type !== 'var';
+}
+
+function print(term) {
+  if (term.type === 'var') {
+    return term.name;
+  }
+  if (term.type === 'lam') {
+    return 'λ' + term.param + '.' + print(term.body);
+  }
+  return printChild(term.fn, 'fn') + ' ' + printChild(term.arg, 'arg');
+}
+
+function printChild(child, role) {
+  const text = print(child);
+  return needsParens(child, role) ? '(' + text + ')' : text;
+}
+
+/* ---------- Free variables and substitution ---------- */
+
+function freeVars(term) {
+  const result = new Set();
+
+  function visit(node, bound) {
+    if (node.type === 'var') {
+      if (!bound.has(node.name)) {
+        result.add(node.name);
+      }
+    } else if (node.type === 'lam') {
+      const inner = new Set(bound);
+      inner.add(node.param);
+      visit(node.body, inner);
+    } else {
+      visit(node.fn, bound);
+      visit(node.arg, bound);
+    }
+  }
+
+  visit(term, new Set());
+  return result;
+}
+
+// x → x' → x'' … until the name is not in `avoid`.
+function freshName(base, avoid) {
+  let name = base + "'";
+  while (avoid.has(name)) {
+    name += "'";
+  }
+  return name;
+}
+
+// Capture-avoiding substitution: term[name := value]
+function subst(term, name, value, valueFreeVars = freeVars(value)) {
+  if (term.type === 'var') {
+    return term.name === name ? value : term;
+  }
+
+  if (term.type === 'app') {
+    return App(
+      subst(term.fn, name, value, valueFreeVars),
+      subst(term.arg, name, value, valueFreeVars)
+    );
+  }
+
+  // Lambda that rebinds the same name: nothing inside can be replaced.
+  if (term.param === name) {
+    return term;
+  }
+
+  // No risk of capture: substitute straight into the body.
+  if (!valueFreeVars.has(term.param)) {
+    return Lam(term.param, subst(term.body, name, value, valueFreeVars));
+  }
+
+  // The parameter would capture a free variable of `value`.
+  const bodyFreeVars = freeVars(term.body);
+  if (!bodyFreeVars.has(name)) {
+    return term; // nothing to substitute, so no need to rename
+  }
+  const avoid = new Set([...valueFreeVars, ...bodyFreeVars, name]);
+  const renamed = freshName(term.param, avoid);
+  const renamedBody = subst(term.body, term.param, Var(renamed));
+  return Lam(renamed, subst(renamedBody, name, value, valueFreeVars));
+}
+
+/* ---------- Names and Church numerals ---------- */
+
+function church(n) {
+  let body = Var('x');
+  for (let i = 0; i < n; i += 1) {
+    body = App(Var('f'), body);
+  }
+  return Lam('f', Lam('x', body));
+}
+
+// env is a Map from name to term. Digits fall back to Church numerals.
+function resolve(name, env) {
+  if (env.has(name)) {
+    return env.get(name);
+  }
+  if (/^\d+$/.test(name) && Number(name) <= MAX_NUMERAL) {
+    return church(Number(name));
+  }
+  return null;
+}
+
+/* ---------- Paths ----------
+   A path is a string of steps from the root: 'f' = fn, 'a' = arg, 'b' = body.
+   '' is the root. Example: 'fa' = the argument of the function part.          */
+
+const PATH_FIELD = { f: 'fn', a: 'arg', b: 'body' };
+
+function getAt(term, path) {
+  let node = term;
+  for (const dir of path) {
+    node = node[PATH_FIELD[dir]];
+  }
+  return node;
+}
+
+function setAt(term, path, replacement) {
+  if (path === '') {
+    return replacement;
+  }
+  const field = PATH_FIELD[path[0]];
+  const copy = Object.assign({}, term);
+  copy[field] = setAt(term[field], path.slice(1), replacement);
+  return copy;
+}
+
+function isValidPath(term, path) {
+  let node = term;
+  for (const dir of path) {
+    const field = PATH_FIELD[dir];
+    if (!node || !field || !(field in node)) {
+      return false;
+    }
+    node = node[field];
+  }
+  return Boolean(node);
+}
+
+/* ---------- Normal-order reduction ---------- */
+
+// Finds the leftmost-outermost thing to reduce.
+//   kind 'β': a beta redex  (λx.b) a
+//   kind 'δ': a name that has to be replaced by its definition to make progress
+function findRedex(term, env, path = '', depth = 0) {
+  if (term.type === 'app') {
+    if (term.fn.type === 'lam') {
+      return { path: path, kind: 'β' };
+    }
+    if (term.fn.type === 'var' && isRef(term.fn.name) && resolve(term.fn.name, env)) {
+      return { path: path + 'f', kind: 'δ' };
+    }
+    return findRedex(term.fn, env, path + 'f', depth)
+        || findRedex(term.arg, env, path + 'a', depth);
+  }
+
+  if (term.type === 'lam') {
+    return findRedex(term.body, env, path + 'b', depth);
+  }
+
+  // A name that is not applied expands only if its own definition can reduce
+  // (e.g. OMEGA does, TRUE does not). Depth guards against cyclic definitions.
+  if (isRef(term.name) && depth < 32) {
+    const definition = resolve(term.name, env);
+    if (definition && findRedex(definition, env, '', depth + 1)) {
+      return { path: path, kind: 'δ' };
+    }
+  }
+  return null;
+}
+
+function step(term, env) {
+  const redex = findRedex(term, env);
+  if (!redex) {
+    return null;
+  }
+
+  const node = getAt(term, redex.path);
+  let replacement;
+  if (redex.kind === 'β') {
+    replacement = subst(node.fn.body, node.fn.param, node.arg);
+  } else {
+    replacement = resolve(node.name, env);
+  }
+
+  return {
+    term: setAt(term, redex.path, replacement),
+    kind: redex.kind,
+    path: redex.path,
+  };
+}
+
+function size(term) {
+  let count = 0;
+  const stack = [term];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    count += 1;
+    if (node.type === 'app') {
+      stack.push(node.fn, node.arg);
+    } else if (node.type === 'lam') {
+      stack.push(node.body);
+    }
+  }
+  return count;
+}
+
+// Reduces until normal form or the limit. Returns every step taken.
+// stop is 'normal', 'limit' or 'size'.
+function reduce(term, env, limit = STEP_LIMIT) {
+  const steps = [];
+  let current = term;
+
+  while (steps.length < limit) {
+    const next = step(current, env);
+    if (!next) {
+      return { steps: steps, term: current, stop: 'normal' };
+    }
+    steps.push(next);
+    current = next.term;
+    if (size(current) > MAX_SIZE) {
+      return { steps: steps, term: current, stop: 'size' };
+    }
+  }
+
+  const stop = findRedex(current, env) ? 'limit' : 'normal';
+  return { steps: steps, term: current, stop: stop };
+}
+
+/* ---------- Alpha-equivalence via de Bruijn indices ---------- */
+
+// Bound variables become #index (distance to their binder); free ones keep their name.
+function toDeBruijn(term, context = []) {
+  if (term.type === 'var') {
+    const position = context.lastIndexOf(term.name);
+    if (position < 0) {
+      return term.name;
+    }
+    return '#' + (context.length - 1 - position);
+  }
+
+  if (term.type === 'lam') {
+    context.push(term.param);
+    const body = toDeBruijn(term.body, context);
+    context.pop();
+    return 'λ' + body;
+  }
+
+  return '(' + toDeBruijn(term.fn, context) + ' ' + toDeBruijn(term.arg, context) + ')';
+}
+
+function alphaEq(a, b) {
+  return toDeBruijn(a) === toDeBruijn(b);
+}
+
+// Replaces every name by its definition (used for comparisons, not for display).
+function expandAll(term, env, depth = 0) {
+  if (depth > 64) {
+    throw new Error('definitions nest too deeply');
+  }
+  if (term.type === 'var') {
+    const definition = isRef(term.name) ? resolve(term.name, env) : null;
+    return definition ? expandAll(definition, env, depth + 1) : term;
+  }
+  if (term.type === 'lam') {
+    return Lam(term.param, expandAll(term.body, env, depth));
+  }
+  return App(expandAll(term.fn, env, depth), expandAll(term.arg, env, depth));
+}
+
+/* ---------- Aliases ---------- */
+
+// Map from de Bruijn string to the list of names that have that shape.
+function buildAliasIndex(env) {
+  const index = new Map();
+
+  function add(key, name) {
+    const names = index.get(key) || [];
+    if (!names.includes(name)) {
+      names.push(name);
+    }
+    index.set(key, names);
+  }
+
+  for (let n = 0; n <= 20; n += 1) {
+    add(toDeBruijn(church(n)), String(n));
+  }
+  for (const [name, term] of env) {
+    try {
+      add(toDeBruijn(expandAll(term, env)), name);
+    } catch (error) {
+      // A cyclic definition has no finite shape; leave it out.
+    }
+  }
+  return index;
+}
+
+function aliasesOf(term, env, index) {
+  if (!term || size(term) > MAX_SIZE) {
+    return [];
+  }
+  try {
+    return index.get(toDeBruijn(expandAll(term, env))) || [];
+  } catch (error) {
+    return [];
+  }
+}
+
+/* ---------- Definitions file ----------
+   One definition per line:   NAME = term      # comment
+   A line starting with ## names the group for the lines after it.
+   This is parsed strictly as data; nothing is ever evaluated as code.   */
+
+const NAME_PATTERN = /^(?:[A-Z][A-Za-z0-9_]*|[0-9]+)$/;
+
+function parseDefs(text) {
+  const defs = [];
+  const errors = [];
+  let group = 'Saved';
+
+  String(text).split(/\r?\n/).forEach(function (line, i) {
+    const lineNo = i + 1;
+
+    const header = /^\s*##\s*(.*?)\s*$/.exec(line);
+    if (header) {
+      group = header[1] || 'Saved';
+      return;
+    }
+
+    const content = line.replace(/#.*/, '').trim();
+    if (content === '') {
+      return;
+    }
+
+    const match = /^(\S+)\s*=\s*(.+)$/.exec(content);
+    if (!match) {
+      errors.push(`line ${lineNo}: expected NAME = term`);
+      return;
+    }
+
+    const name = match[1];
+    const source = match[2].trim();
+    if (!NAME_PATTERN.test(name)) {
+      errors.push(`line ${lineNo}: bad name '${name}' (use UPPERCASE or digits)`);
+      return;
+    }
+
+    try {
+      parse(source);
+      defs.push({ name: name, group: group, src: source });
+    } catch (error) {
+      errors.push(`line ${lineNo}: ${error.message}`);
+    }
+  });
+
+  return { defs: defs, errors: errors };
+}
+
+function groupDefs(defs) {
+  const groups = new Map();
+  for (const def of defs) {
+    if (!groups.has(def.group)) {
+      groups.set(def.group, []);
+    }
+    groups.get(def.group).push(def);
+  }
+  return groups;
+}
+
+function formatDefs(defs) {
+  let text = '# λ workbench favorites: NAME = term   (# comment, ## starts a group)\n';
+  for (const [group, items] of groupDefs(defs)) {
+    text += '\n## ' + group + '\n';
+    for (const def of items) {
+      text += def.name + ' = ' + def.src + '\n';
+    }
+  }
+  return text;
+}
+
+// Adds new definitions; ones with an existing name replace the old one in place.
+function mergeDefs(base, incoming) {
+  const result = base.slice();
+  for (const def of incoming) {
+    const existing = result.findIndex(function (d) { return d.name === def.name; });
+    if (existing >= 0) {
+      result[existing] = def;
+    } else {
+      result.push(def);
+    }
+  }
+  return result;
+}
+
+function envFromDefs(defs) {
+  const env = new Map();
+  for (const def of defs) {
+    env.set(def.name, parse(def.src));
+  }
+  return env;
+}
+
+const DEFAULT_TEXT = `
+## Booleans
+TRUE  = λt f.t
+FALSE = λt f.f
+AND   = λp q.p q p
+OR    = λp q.p p q
+NOT   = λp.p FALSE TRUE
+IF    = λp a b.p a b
+
+## Numerals
+0 = λf x.x
+1 = λf x.f x
+2 = λf x.f (f x)
+3 = λf x.f (f (f x))
+4 = λf x.f (f (f (f x)))
+5 = λf x.f (f (f (f (f x))))
+
+## Arithmetic
+SUCC   = λn f x.f (n f x)
+PRED   = λn f x.n (λg h.h (g f)) (λu.x) (λu.u)
+PLUS   = λm n f x.m f (n f x)
+MULT   = λm n f.m (n f)
+ISZERO = λn.n (λx.FALSE) TRUE
+
+## Combinators
+I     = λx.x
+K     = λx y.x
+S     = λx y z.x z (y z)
+Y     = λf.(λx.f (x x)) (λx.f (x x))
+OMEGA = (λx.x x) (λx.x x)   # diverges
+`;
+
+/* ---------- Tests (call runTests() from the console) ---------- */
+
+function runTests() {
+  const env = envFromDefs(parseDefs(DEFAULT_TEXT).defs);
+
+  function normalize(source) {
+    return reduce(parse(source), env, STEP_LIMIT);
+  }
+
+  function sameAs(term, source) {
+    return alphaEq(expandAll(term, env), expandAll(parse(source), env));
+  }
+
+  const cases = [
+    ['PLUS 2 3 → 5', function () {
+      const result = normalize('PLUS 2 3');
+      return result.stop === 'normal' && sameAs(result.term, '5');
+    }],
+    ['MULT 2 3 → 6', function () {
+      const result = normalize('MULT 2 3');
+      return result.stop === 'normal' && sameAs(result.term, '6');
+    }],
+    ['AND TRUE FALSE → FALSE', function () {
+      return sameAs(normalize('AND TRUE FALSE').term, 'FALSE');
+    }],
+    ['NOT (NOT TRUE) → TRUE', function () {
+      return sameAs(normalize('NOT (NOT TRUE)').term, 'TRUE');
+    }],
+    ['λx.λy.x ≡α λa.λb.a', function () {
+      return alphaEq(parse('λx.λy.x'), parse('λa.λb.a'))
+          && !alphaEq(parse('λx.λy.x'), parse('λa.λb.b'));
+    }],
+    ["capture: (λx.λy.x) y → λy'.y", function () {
+      return print(step(parse('(λx.λy.x) y'), env).term) === "λy'.y";
+    }],
+    ['parser: \\x y.x ≡ λx.λy.x', function () {
+      return alphaEq(parse('\\x y.x'), parse('λx.(λy.(x))'));
+    }],
+    ['OMEGA stops at STEP_LIMIT', function () {
+      const result = normalize('OMEGA');
+      return result.stop === 'limit' && result.steps.length === STEP_LIMIT;
+    }],
+  ];
+
+  const results = cases.map(function ([test, check]) {
+    let pass = false;
+    let error = '';
+    try {
+      pass = Boolean(check());
+    } catch (e) {
+      error = e.message;
+    }
+    return { test: test, pass: pass, error: error };
+  });
+
+  if (typeof console !== 'undefined' && console.table) {
+    console.table(results);
+  }
+  return results;
+}
+
+/* =====================================================================
+   UI — everything below touches the DOM.
+   ===================================================================== */
+
+const FAVORITES_KEY = 'lambda-workbench.favorites';
+const SETTINGS_KEY = 'lambda-workbench.ui';
+
+const THEMES = [
+  { id: 'github-dark', label: 'GitHub Dark' },
+  { id: 'tokyo-night', label: 'Tokyo Night' },
+  { id: 'monokai', label: 'Monokai' },
+  { id: 'gruvbox', label: 'Gruvbox' },
+  { id: 'gruvbox-light', label: 'Gruvbox Soft Light' },
+];
+
+// F cycles through these in order. left/right = whether that pane is open.
+const LAYOUTS = [
+  { id: 'both', label: 'Both panes', left: true, right: true },
+  { id: 'focus', label: 'Focus', left: false, right: false },
+  { id: 'history-only', label: 'History only', left: false, right: true },
+  { id: 'favorites-only', label: 'Favorites only', left: true, right: false },
+];
+
+const ZOOM_DEFAULT = 22;
+const ZOOM_MIN = 12;
+const ZOOM_MAX = 48;
+const ZOOM_STEP = 2;
+
+/* ---------- State ---------- */
+
+let favorites = [];               // [{ name, group, src }]
+let env = new Map();              // name → parsed term
+let aliasIndex = new Map();
+let history = [];                 // [{ term, kind, alias }]; kind: set | edit | β | δ
+let selectedPath = null;          // path of the selected subterm, or null
+let freshPath = null;             // path that just changed (animated once)
+let stepLimit = STEP_LIMIT;
+const collapsedGroups = new Set();
+const settings = {
+  theme: THEMES[0].id,
+  zoom: ZOOM_DEFAULT,
+  layout: LAYOUTS[0].id,
+  showNames: true,
+};
+
+function currentTerm() {
+  if (history.length === 0) {
+    return null;
+  }
+  return history[history.length - 1].term;
+}
+
+/* ---------- Small DOM helpers ---------- */
+
+function byId(id) {
+  return document.getElementById(id);
+}
+
+function makeElement(tag, className, text) {
+  const element = document.createElement(tag);
+  if (className) {
+    element.className = className;
+  }
+  if (text !== undefined) {
+    element.textContent = text;
+  }
+  return element;
+}
+
+function setStatus(message, kind) {
+  const status = byId('status');
+  status.textContent = message;
+  status.className = 'msg' + (kind ? ' ' + kind : '');
+}
+
+/* ---------- Settings (theme, zoom, layout, names) ---------- */
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) {
+      return;
+    }
+    const saved = JSON.parse(raw);
+    if (THEMES.some(function (t) { return t.id === saved.theme; })) {
+      settings.theme = saved.theme;
+    }
+    if (typeof saved.zoom === 'number') {
+      settings.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, saved.zoom));
+    }
+    if (LAYOUTS.some(function (l) { return l.id === saved.layout; })) {
+      settings.layout = saved.layout;
+    }
+    if (typeof saved.showNames === 'boolean') {
+      settings.showNames = saved.showNames;
+    }
+  } catch (error) {
+    // Unreadable settings: keep the defaults.
+  }
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch (error) {
+    // Storage unavailable (private mode etc.): settings last for this visit only.
+  }
+}
+
+function currentLayout() {
+  return LAYOUTS.find(function (l) { return l.id === settings.layout; });
+}
+
+function applySettings() {
+  const theme = THEMES.find(function (t) { return t.id === settings.theme; });
+  const layout = currentLayout();
+
+  document.documentElement.dataset.theme = theme.id;
+  document.documentElement.style.setProperty('--expr-size', settings.zoom + 'px');
+  document.body.classList.toggle('left-closed', !layout.left);
+  document.body.classList.toggle('right-closed', !layout.right);
+
+  byId('themeBtn').textContent = '◐ ' + theme.label;
+  byId('layoutBtn').textContent = '▥ ' + layout.label;
+  byId('namesBtn').textContent = settings.showNames ? 'Names: on' : 'Names: full λ';
+  byId('zoomInfo').textContent = Math.round(settings.zoom / ZOOM_DEFAULT * 100) + '%';
+}
+
+function cycleTheme() {
+  const index = THEMES.findIndex(function (t) { return t.id === settings.theme; });
+  settings.theme = THEMES[(index + 1) % THEMES.length].id;
+  saveSettings();
+  applySettings();
+}
+
+function setLayout(layoutId) {
+  settings.layout = layoutId;
+  saveSettings();
+  applySettings();
+}
+
+// F: both → focus → history only → favorites only → both …
+function cycleLayout() {
+  const index = LAYOUTS.findIndex(function (l) { return l.id === settings.layout; });
+  setLayout(LAYOUTS[(index + 1) % LAYOUTS.length].id);
+}
+
+// The collapse/open buttons on each pane flip just that pane.
+function setPaneOpen(side, open) {
+  const layout = currentLayout();
+  const left = side === 'left' ? open : layout.left;
+  const right = side === 'right' ? open : layout.right;
+  const target = LAYOUTS.find(function (l) { return l.left === left && l.right === right; });
+  setLayout(target.id);
+}
+
+function toggleNames() {
+  settings.showNames = !settings.showNames;
+  saveSettings();
+  applySettings();
+  render();
+}
+
+/* ---------- Shortcuts popup ---------- */
+
+function isHelpOpen() {
+  return !byId('helpOverlay').hidden;
+}
+
+function setHelpOpen(open) {
+  byId('helpOverlay').hidden = !open;
+}
+
+function zoomBy(delta) {
+  settings.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, settings.zoom + delta));
+  saveSettings();
+  applySettings();
+}
+
+function resetZoom() {
+  settings.zoom = ZOOM_DEFAULT;
+  saveSettings();
+  applySettings();
+}
+
+/* ---------- Favorites ---------- */
+
+function loadFavorites() {
+  try {
+    const saved = localStorage.getItem(FAVORITES_KEY);
+    if (saved) {
+      return parseDefs(saved).defs;
+    }
+  } catch (error) {
+    // Fall through to the defaults.
+  }
+  return parseDefs(DEFAULT_TEXT).defs;
+}
+
+function setFavorites(list) {
+  favorites = list;
+  env = envFromDefs(favorites);
+  aliasIndex = buildAliasIndex(env);
+
+  try {
+    localStorage.setItem(FAVORITES_KEY, formatDefs(favorites));
+  } catch (error) {
+    // Storage unavailable: favorites last for this visit only.
+  }
+
+  for (const entry of history) {
+    entry.alias = aliasesOf(entry.term, env, aliasIndex);
+  }
+  renderFavorites();
+  render();
+}
+
+function renderFavorites() {
+  const container = byId('favs');
+  container.textContent = '';
+
+  for (const [group, items] of groupDefs(favorites)) {
+    const collapsed = collapsedGroups.has(group);
+
+    const header = makeElement('button', 'group-header' + (collapsed ? ' collapsed' : ''));
+    header.append(makeElement('span', 'chevron', '▾'), group);
+    header.addEventListener('click', function () {
+      if (collapsedGroups.has(group)) {
+        collapsedGroups.delete(group);
+      } else {
+        collapsedGroups.add(group);
+      }
+      renderFavorites();
+    });
+    container.append(header);
+
+    if (collapsed) {
+      continue;
+    }
+
+    for (const def of items) {
+      const row = makeElement('div', 'fav');
+
+      const useButton = makeElement('button', 'use');
+      useButton.title = def.name + ' = ' + def.src;
+      useButton.append(makeElement('span', 'name', def.name), makeElement('span', 'src', def.src));
+      useButton.addEventListener('click', function (event) {
+        useFavorite(def.name, event.shiftKey);
+      });
+
+      const deleteButton = makeElement('button', 'delete', '×');
+      deleteButton.title = 'Delete ' + def.name;
+      deleteButton.addEventListener('click', function () {
+        setFavorites(favorites.filter(function (d) { return d.name !== def.name; }));
+      });
+
+      row.append(useButton, deleteButton);
+      container.append(row);
+    }
+  }
+}
+
+/* ---------- Rendering the expression ---------- */
+
+const MAX_DISPLAY_EXPANSION = 16; // nesting limit when showing names as full λ
+
+// With names off (N), a saved name is drawn as its definition. Returns that
+// definition, or null if the name should be drawn as it is.
+function displayedDefinition(term, ctx) {
+  if (settings.showNames || term.type !== 'var' || !isRef(term.name)) {
+    return null;
+  }
+  if (ctx.expansionDepth >= MAX_DISPLAY_EXPANSION) {
+    return null;
+  }
+  return resolve(term.name, env);
+}
+
+// The node whose shape is actually drawn (used to decide on parentheses).
+function displayedShape(term, ctx) {
+  let shape = term;
+  let guard = 0;
+  let definition = displayedDefinition(shape, ctx);
+  while (definition && guard < MAX_DISPLAY_EXPANSION) {
+    shape = definition;
+    guard += 1;
+    definition = displayedDefinition(shape, ctx);
+  }
+  return shape;
+}
+
+// ctx carries the redex/fresh paths, a counter for binder ids and the
+// current display-expansion depth.
+// scope maps a variable name to the id of the λ that binds it.
+// path is null for nodes drawn inside an expanded name: those are not
+// separately selectable, so clicks select the whole name.
+function renderTerm(term, path, ctx, scope) {
+  const node = makeElement('span', 't');
+  if (path !== null) {
+    node.dataset.path = path;
+    if (path === selectedPath) {
+      node.classList.add('sel');
+    }
+    if (path === ctx.redexPath) {
+      node.classList.add('redex');
+    }
+    if (path === ctx.freshPath) {
+      node.classList.add('fresh');
+    }
+  }
+
+  const definition = displayedDefinition(term, ctx);
+  if (definition) {
+    node.classList.add('expanded');
+    node.title = term.name;
+    ctx.expansionDepth += 1;
+    // Definitions are closed terms, so they start with an empty scope.
+    node.append(renderTerm(definition, null, ctx, new Map()));
+    ctx.expansionDepth -= 1;
+    return node;
+  }
+
+  if (term.type === 'var') {
+    node.textContent = term.name;
+    node.classList.add('var');
+    if (scope.has(term.name)) {
+      node.dataset.bound = scope.get(term.name);
+    } else if (isRef(term.name)) {
+      node.classList.add('ref');
+      const def = favorites.find(function (d) { return d.name === term.name; });
+      if (def) {
+        node.title = def.name + ' = ' + def.src;
+      }
+    } else {
+      node.classList.add('free');
+      node.title = 'free variable';
+    }
+    return node;
+  }
+
+  if (term.type === 'lam') {
+    const binderId = String(ctx.nextBinderId);
+    ctx.nextBinderId += 1;
+
+    const binder = makeElement('span', 'bind');
+    binder.dataset.bid = binderId;
+    binder.append(
+      makeElement('span', 'lambda-sign', 'λ'),
+      makeElement('span', 'param', term.param),
+      makeElement('span', 'dot', '.')
+    );
+
+    const innerScope = new Map(scope);
+    innerScope.set(term.param, binderId);
+    node.append(binder, renderTerm(term.body, childPath(path, 'b'), ctx, innerScope));
+    return node;
+  }
+
+  node.append(
+    renderChild(term.fn, childPath(path, 'f'), 'fn', ctx, scope),
+    ' ',
+    renderChild(term.arg, childPath(path, 'a'), 'arg', ctx, scope)
+  );
+  return node;
+}
+
+function childPath(path, dir) {
+  return path === null ? null : path + dir;
+}
+
+function renderChild(child, path, role, ctx, scope) {
+  const node = renderTerm(child, path, ctx, scope);
+  if (needsParens(displayedShape(child, ctx), role)) {
+    node.prepend(makeElement('span', 'paren', '('));
+    node.append(makeElement('span', 'paren', ')'));
+  }
+  return node;
+}
+
+function render() {
+  const term = currentTerm();
+  const exprBox = byId('expr');
+  const aliasPill = byId('aliasPill');
+  const nextHint = byId('nextHint');
+
+  exprBox.textContent = '';
+  aliasPill.hidden = true;
+  nextHint.textContent = '';
+
+  if (selectedPath !== null && (!term || !isValidPath(term, selectedPath))) {
+    selectedPath = null;
+  }
+
+  if (term) {
+    const redex = findRedex(term, env);
+    const ctx = {
+      redexPath: redex ? redex.path : null,
+      freshPath: freshPath,
+      nextBinderId: 0,
+      expansionDepth: 0,
+    };
+    exprBox.append(renderTerm(term, '', ctx, new Map()));
+
+    const aliases = history[history.length - 1].alias;
+    if (aliases.length > 0) {
+      aliasPill.textContent = '= ' + aliases.join(', ');
+      aliasPill.hidden = false;
+    }
+
+    if (!redex) {
+      nextHint.textContent = 'normal form';
+    } else if (redex.kind === 'β') {
+      nextHint.textContent = 'next: β-reduce';
+    } else {
+      nextHint.textContent = 'next: δ expand ' + getAt(term, redex.path).name;
+    }
+  }
+
+  // The glow plays once; later re-renders (e.g. selecting) should not replay it.
+  freshPath = null;
+
+  renderHistory();
+  renderStepInfo();
+}
+
+function renderHistory() {
+  const list = byId('hist');
+  list.textContent = '';
+
+  history.forEach(function (entry, index) {
+    const item = makeElement('li');
+    if (index === history.length - 1) {
+      item.classList.add('current');
+    }
+
+    const text = print(entry.term);
+    item.title = text.length > 2000 ? text.slice(0, 2000) + '…' : text;
+
+    let kindLabel = entry.kind;
+    if (entry.kind === 'set') {
+      kindLabel = '•';
+    } else if (entry.kind === 'edit') {
+      kindLabel = '✎';
+    }
+
+    item.append(
+      makeElement('span', 'num', String(index)),
+      makeElement('span', 'kind', kindLabel),
+      makeElement('span', 'text', text.length > 500 ? text.slice(0, 500) + '…' : text),
+      makeElement('span', 'alias', entry.alias.length > 0 ? '= ' + entry.alias.join(', ') : '')
+    );
+
+    item.addEventListener('click', function () {
+      history = history.slice(0, index + 1);
+      selectedPath = null;
+      setStatus('');
+      render();
+    });
+    list.append(item);
+  });
+
+  if (list.lastElementChild) {
+    list.lastElementChild.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function renderStepInfo() {
+  const term = currentTerm();
+  if (!term) {
+    byId('stepInfo').textContent = 'empty';
+    return;
+  }
+  byId('stepInfo').textContent = 'step ' + (history.length - 1) + ' · ' + size(term) + ' nodes';
+}
+
+/* ---------- Actions ---------- */
+
+function pushHistory(term, kind, shouldRender = true) {
+  history.push({ term: term, kind: kind, alias: aliasesOf(term, env, aliasIndex) });
+  if (shouldRender) {
+    render();
+  }
+}
+
+function useFavorite(name, applySelection) {
+  const reference = Var(name);
+  const term = currentTerm();
+  setStatus('');
+
+  if (!term) {
+    selectedPath = null;
+    pushHistory(reference, 'set');
+    return;
+  }
+
+  if (selectedPath !== null) {
+    const target = getAt(term, selectedPath);
+    const replacement = applySelection ? App(target, reference) : reference;
+    pushHistory(setAt(term, selectedPath, replacement), 'edit');
+    return;
+  }
+
+  pushHistory(App(term, reference), 'edit');
+}
+
+function doStep() {
+  const term = currentTerm();
+  if (!term) {
+    return;
+  }
+  const next = step(term, env);
+  if (!next) {
+    setStatus('already in normal form');
+    return;
+  }
+  selectedPath = null;
+  freshPath = next.path;
+  setStatus('');
+  pushHistory(next.term, next.kind);
+}
+
+function doEval() {
+  const term = currentTerm();
+  if (!term) {
+    return;
+  }
+
+  const result = reduce(term, env, stepLimit);
+  selectedPath = null;
+  for (const s of result.steps) {
+    pushHistory(s.term, s.kind, false);
+  }
+
+  const count = result.steps.length;
+  if (result.stop === 'normal') {
+    if (count === 0) {
+      setStatus('already in normal form', 'ok');
+    } else {
+      setStatus(`normal form after ${count} step${count === 1 ? '' : 's'}`, 'ok');
+    }
+  } else if (result.stop === 'limit') {
+    setStatus(`stopped after ${count} steps (limit ${stepLimit}); press Enter to continue`, 'err');
+  } else {
+    setStatus(`stopped after ${count} steps: the term grew past ${MAX_SIZE} nodes`, 'err');
+  }
+  render();
+}
+
+function undo() {
+  if (history.length === 0) {
+    return;
+  }
+  history.pop();
+  selectedPath = null;
+  setStatus('');
+  render();
+}
+
+function clearExpression() {
+  history = [];
+  selectedPath = null;
+  setStatus('');
+  render();
+}
+
+// Delete removes the selected subterm and keeps its sibling in the application.
+function deleteSelection() {
+  const term = currentTerm();
+  if (!term || selectedPath === null) {
+    return;
+  }
+  if (selectedPath === '') {
+    clearExpression();
+    return;
+  }
+
+  const parentPath = selectedPath.slice(0, -1);
+  const parent = getAt(term, parentPath);
+  if (parent.type !== 'app') {
+    setStatus("can't remove the body of a λ; select the λ itself instead");
+    return;
+  }
+
+  const removedSide = selectedPath.slice(-1);
+  const kept = removedSide === 'f' ? parent.arg : parent.fn;
+  selectedPath = parentPath;
+  pushHistory(setAt(term, parentPath, kept), 'edit');
+}
+
+function loadTypedTerm(input) {
+  const source = input.value.trim();
+  if (source === '') {
+    return;
+  }
+  try {
+    const term = parse(source);
+    selectedPath = null;
+    setStatus('');
+    pushHistory(term, 'set');
+    input.value = '';
+    input.blur();
+  } catch (error) {
+    setStatus('parse error: ' + error.message, 'err');
+  }
+}
+
+function saveCurrent() {
+  const name = byId('saveName').value.trim();
+  const message = byId('saveMsg');
+  const term = currentTerm();
+  message.className = 'msg err';
+
+  if (!term) {
+    message.textContent = 'nothing to save';
+    return;
+  }
+  if (!NAME_PATTERN.test(name)) {
+    message.textContent = 'name must be UPPERCASE or digits';
+    return;
+  }
+
+  const existing = favorites.find(function (d) { return d.name === name; });
+  const group = existing ? existing.group : 'Saved';
+  setFavorites(mergeDefs(favorites, [{ name: name, group: group, src: print(term) }]));
+
+  message.className = 'msg ok';
+  message.textContent = (existing ? 'updated ' : 'saved ') + name;
+  byId('saveName').value = '';
+}
+
+function exportFavorites() {
+  const blob = new Blob([formatDefs(favorites)], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'lambda-favorites.txt';
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+}
+
+function importFavorites(file) {
+  const reader = new FileReader();
+  reader.onload = function () {
+    const { defs, errors } = parseDefs(reader.result);
+    setFavorites(mergeDefs(favorites, defs));
+
+    const message = byId('importMsg');
+    let text = `imported ${defs.length} definition${defs.length === 1 ? '' : 's'}`;
+    if (errors.length > 0) {
+      text += `, skipped ${errors.length}:\n` + errors.join('\n');
+    }
+    message.textContent = text;
+    message.className = 'msg ' + (errors.length > 0 ? 'err' : 'ok');
+  };
+  reader.readAsText(file);
+}
+
+function showTestResults() {
+  const results = runTests();
+  const passed = results.filter(function (r) { return r.pass; });
+  const failed = results.filter(function (r) { return !r.pass; });
+  const message = byId('testMsg');
+
+  let text = `${passed.length}/${results.length} passed`;
+  for (const r of failed) {
+    text += '  ✗ ' + r.test;
+  }
+  message.textContent = text;
+  message.className = 'msg ' + (failed.length === 0 ? 'ok' : 'err');
+}
+
+/* ---------- Expression pane: selection and binder hover ---------- */
+
+function clearHoverMarks() {
+  const marked = byId('expr').querySelectorAll('.hover, .link');
+  for (const element of marked) {
+    element.classList.remove('hover', 'link');
+  }
+}
+
+function onExpressionClick(event) {
+  const node = event.target.closest('[data-path]');
+  if (!node || node.dataset.path === selectedPath) {
+    selectedPath = null;
+  } else {
+    selectedPath = node.dataset.path;
+  }
+  render();
+}
+
+// Hovering a variable highlights its λ and every other use bound by that λ.
+function onExpressionHover(event) {
+  clearHoverMarks();
+
+  const node = event.target.closest('.t');
+  const selectable = event.target.closest('[data-path]');
+  if (selectable) {
+    selectable.classList.add('hover');
+  }
+
+  const binder = event.target.closest('.bind');
+  let binderId = null;
+  if (binder) {
+    binderId = binder.dataset.bid;
+  } else if (node && node.dataset.bound !== undefined) {
+    binderId = node.dataset.bound;
+  }
+
+  if (binderId !== null) {
+    const selector = `[data-bid="${binderId}"], [data-bound="${binderId}"]`;
+    for (const element of byId('expr').querySelectorAll(selector)) {
+      element.classList.add('link');
+    }
+  }
+}
+
+/* ---------- Keyboard ---------- */
+
+function isTyping(target) {
+  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+}
+
+function onKeyDown(event) {
+  const target = event.target;
+
+  if (isTyping(target)) {
+    if (event.key === 'Escape') {
+      target.blur();
+    }
+    return;
+  }
+  if (event.ctrlKey || event.metaKey || event.altKey) {
+    return;
+  }
+
+  // While the shortcuts popup is open, only ? and Esc do anything (both close it).
+  if (isHelpOpen()) {
+    if (event.key === '?' || event.key === 'Escape') {
+      event.preventDefault();
+      setHelpOpen(false);
+    }
+    return;
+  }
+
+  switch (event.key) {
+    case ' ':
+      event.preventDefault();
+      if (event.shiftKey) {
+        undo();
+      } else {
+        doStep();
+      }
+      break;
+    case '?':
+      event.preventDefault();
+      setHelpOpen(true);
+      break;
+    case 'Backspace':
+      event.preventDefault();
+      undo();
+      break;
+    case 'Enter':
+      if (target.tagName === 'BUTTON') {
+        return; // let a focused button handle its own Enter
+      }
+      event.preventDefault();
+      doEval();
+      break;
+    case 'Escape':
+      selectedPath = null;
+      render();
+      break;
+    case 'Delete':
+      event.preventDefault();
+      deleteSelection();
+      break;
+    case 't':
+    case 'T':
+      cycleTheme();
+      break;
+    case 'f':
+    case 'F':
+      cycleLayout();
+      break;
+    case 'n':
+    case 'N':
+      toggleNames();
+      break;
+    case '+':
+    case '=':
+      zoomBy(ZOOM_STEP);
+      break;
+    case '-':
+      zoomBy(-ZOOM_STEP);
+      break;
+    case '0':
+      resetZoom();
+      break;
+  }
+}
+
+/* ---------- Wiring ---------- */
+
+function wireEvents() {
+  const exprBox = byId('expr');
+  exprBox.addEventListener('click', onExpressionClick);
+  exprBox.addEventListener('mouseover', onExpressionHover);
+  exprBox.addEventListener('mouseleave', clearHoverMarks);
+
+  byId('stepBtn').addEventListener('click', doStep);
+  byId('undoBtn').addEventListener('click', undo);
+  byId('evalBtn').addEventListener('click', doEval);
+  byId('clearBtn').addEventListener('click', clearExpression);
+
+  const limitInput = byId('limit');
+  limitInput.value = STEP_LIMIT;
+  limitInput.addEventListener('change', function () {
+    const value = parseInt(limitInput.value, 10);
+    stepLimit = value > 0 ? value : STEP_LIMIT;
+    limitInput.value = stepLimit;
+  });
+
+  byId('termInput').addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      loadTypedTerm(event.target);
+    }
+  });
+
+  byId('saveBtn').addEventListener('click', saveCurrent);
+  byId('saveName').addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      saveCurrent();
+    }
+  });
+
+  byId('exportBtn').addEventListener('click', exportFavorites);
+  byId('importBtn').addEventListener('click', function () {
+    byId('importFile').click();
+  });
+  byId('importFile').addEventListener('change', function (event) {
+    const file = event.target.files[0];
+    if (file) {
+      importFavorites(file);
+    }
+    event.target.value = '';
+  });
+  byId('defaultsBtn').addEventListener('click', function () {
+    setFavorites(mergeDefs(favorites, parseDefs(DEFAULT_TEXT).defs));
+    byId('importMsg').textContent = 'defaults restored';
+    byId('importMsg').className = 'msg ok';
+  });
+
+  byId('testBtn').addEventListener('click', showTestResults);
+  byId('themeBtn').addEventListener('click', cycleTheme);
+  byId('layoutBtn').addEventListener('click', cycleLayout);
+  byId('namesBtn').addEventListener('click', toggleNames);
+
+  byId('favCollapse').addEventListener('click', function () {
+    setPaneOpen('left', false);
+  });
+  byId('favRail').addEventListener('click', function () {
+    setPaneOpen('left', true);
+  });
+  byId('histCollapse').addEventListener('click', function () {
+    setPaneOpen('right', false);
+  });
+  byId('histRail').addEventListener('click', function () {
+    setPaneOpen('right', true);
+  });
+
+  byId('helpClose').addEventListener('click', function () {
+    setHelpOpen(false);
+  });
+  // Clicking the dimmed background (outside the card) closes the popup.
+  byId('helpOverlay').addEventListener('click', function (event) {
+    if (event.target === event.currentTarget) {
+      setHelpOpen(false);
+    }
+  });
+
+  // After a mouse click, give focus back to the page so Space/Enter keep
+  // working as shortcuts instead of re-pressing the last button.
+  document.addEventListener('click', function (event) {
+    const button = event.target.closest('button');
+    if (button) {
+      button.blur();
+    }
+  });
+
+  document.addEventListener('keydown', onKeyDown);
+}
+
+/* ---------- Start ---------- */
+
+window.runTests = runTests;
+loadSettings();
+applySettings();
+wireEvents();
+setFavorites(loadFavorites());
+</script>
+</body>
+</html>
