@@ -1,5 +1,7 @@
 # λ workbench
 
+**▶ Try it live: [oakasapoglu.github.io/lambda-workbench](https://oakasapoglu.github.io/lambda-workbench/)**
+
 A small lambda calculus workbench for exploring reduction visually by clicking, not by typing raw terms.
 
 It's one self-contained `index.html` in vanilla JS, with no frameworks, no build step and no network access. Open it in a browser and it works offline.
