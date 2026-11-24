@@ -1,6 +1,9 @@
 # λ workbench
 
-**▶ Try it live: [oakasapoglu.github.io/lambda-workbench](https://oakasapoglu.github.io/lambda-workbench/)**
+**▶ Try it live:**
+
+- [Workbench v1](https://oakasapoglu.github.io/lambda-workbench/workbench-v1.html): the original version.
+- [Workbench v2](https://oakasapoglu.github.io/lambda-workbench/workbench-v2.html): a second version of the same spec, with a command palette and rebindable keys.
 
 A small lambda calculus workbench for exploring reduction visually by clicking, not by typing raw terms.
 
