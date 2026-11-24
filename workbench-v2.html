@@ -1,0 +1,2689 @@
+<!doctype html>
+<!--
+  λ workbench — a lambda calculus workbench in one file. No frameworks, no build, no network.
+  Layout of this file:
+    style               themes (CSS variables) and layout
+    body                the three panes, plus settings / shortcuts / palette panels
+    script#lambda-core  PURE CORE: parse, print, subst, step, α-equivalence, definition files, runTests()
+    script#lambda-ui    UI: action registry, rendering, editing, keys, persistence
+  Open it in a browser. In the console, runTests() checks the core.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A small lambda calculus workbench: build terms by clicking and watch them reduce step by step.">
+<title>λ workbench</title>
+<script>
+/* Apply the saved theme (or the system preference) before first paint, so there is no flash. */
+(function () {
+  var theme = null;
+  try {
+    var saved = JSON.parse(localStorage.getItem('lambda-workbench'));
+    theme = saved && saved.settings && saved.settings.theme;
+  } catch (e) { /* storage blocked or corrupt: fall through to the default */ }
+  if (!/^(dark|tokyo|monokai|gruvbox|gruvbox-light)$/.test(theme || '')) {
+    theme = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'gruvbox-light' : 'dark';
+  }
+  document.documentElement.setAttribute('data-theme', theme);
+})();
+</script>
+<style>
+/* ── Themes: every colour is a variable; one accent per theme ─────────── */
+[data-theme="dark"]          { --bg:#121212; --surface:#1e1e1e; --text:#e6e6e6; --muted:#9a9a9a; --accent:#4f9cf9; --on-accent:#0b1424; --fn:#e5c07b; --arg:#5ccfc0; --delta:#c792ea; --danger:#f07178; --ok:#9fd383; color-scheme: dark; }
+[data-theme="tokyo"]         { --bg:#1a1b26; --surface:#24283b; --text:#c0caf5; --muted:#565f89; --accent:#7aa2f7; --on-accent:#15161e; --fn:#e0af68; --arg:#73daca; --delta:#bb9af7; --danger:#f7768e; --ok:#9ece6a; color-scheme: dark; }
+[data-theme="monokai"]       { --bg:#272822; --surface:#3e3d32; --text:#f8f8f2; --muted:#75715e; --accent:#a6e22e; --on-accent:#1b1c17; --fn:#e6db74; --arg:#66d9ef; --delta:#ae81ff; --danger:#f92672; --ok:#a6e22e; color-scheme: dark; }
+[data-theme="gruvbox"]       { --bg:#282828; --surface:#3c3836; --text:#ebdbb2; --muted:#a89984; --accent:#fe8019; --on-accent:#1d2021; --fn:#fabd2f; --arg:#8ec07c; --delta:#d3869b; --danger:#fb4934; --ok:#b8bb26; color-scheme: dark; }
+[data-theme="gruvbox-light"] { --bg:#f2e5bc; --surface:#ebdbb2; --text:#3c3836; --muted:#7c6f64; --accent:#af3a03; --on-accent:#fbf1c7; --fn:#a96b06; --arg:#2f7a5c; --delta:#8f3f71; --danger:#9d0006; --ok:#79740e; color-scheme: light; }
+html {
+  --soft: color-mix(in srgb, var(--text) 66%, var(--bg));
+  --line: color-mix(in srgb, var(--text) 14%, transparent);
+  --line-strong: color-mix(in srgb, var(--text) 26%, transparent);
+  --tint: color-mix(in srgb, var(--text) 7%, transparent);
+  --accent-tint: color-mix(in srgb, var(--accent) 17%, transparent);
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+}
+
+/* ── Base ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--mono); -webkit-font-smoothing: antialiased; }
+button, input { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+kbd { font: inherit; }
+.app { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100vh; height: 100dvh; }
+
+/* ── Top bar and buttons ───────────────────────────────────────────────── */
+.topbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; padding: .55rem 1rem;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.brand { margin: 0 .6rem 0 0; font-size: 1rem; font-weight: 700; white-space: nowrap; }
+.brand b { color: var(--accent); font-size: 1.45rem; margin-right: .15rem; vertical-align: -.1em; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.spacer { flex: 1; }
+.btn {
+  display: inline-flex; align-items: center; gap: .5rem; padding: .32rem .72rem;
+  border: 1px solid var(--line-strong); border-radius: 6px; background: var(--bg);
+  color: var(--text); cursor: pointer; line-height: 1.35; white-space: nowrap;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+.btn.subtle { background: transparent; }
+.btn.small { padding: .18rem .55rem; font-size: .84rem; }
+.btn.icon { min-width: 2.15rem; justify-content: center; padding: .32rem .5rem; }
+.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
+.btn[aria-pressed="true"] { background: var(--accent-tint); border-color: var(--accent); font-weight: 700; }
+.btn kbd { font-size: .72rem; padding: 0 .32rem; border: 1px solid currentColor; border-radius: 4px; opacity: .72; }
+.btn kbd:empty { display: none; }
+.link {
+  background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px; font-size: inherit;
+}
+:is(.btn, .link, .chip, .fav-btn, .fav-del, .h-row, .toast-x):focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+body.running .btn[data-action="eval"] { background: var(--fn); border-color: var(--fn); }
+
+/* ── Panes ─────────────────────────────────────────────────────────────── */
+.panes { display: grid; grid-template-columns: minmax(210px, 275px) minmax(0, 1fr) minmax(250px, 370px); min-height: 0; }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pane + .pane { border-left: 1px solid var(--line); }
+.pane-h {
+  display: flex; align-items: center; gap: .6rem; margin: 0; padding: .55rem .9rem;
+  border-bottom: 1px solid var(--line); font-size: .7rem; font-weight: 600; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted);
+}
+.pane-h .tools {
+  margin-left: auto; display: flex; gap: .8rem; letter-spacing: 0; text-transform: none;
+  font-weight: 400; font-size: .8rem;
+}
+.fav-pane, .hist-pane { background: var(--surface); }
+
+/* ── Favorites ─────────────────────────────────────────────────────────── */
+.fav-list { flex: 1; overflow: auto; padding: .15rem 0 .8rem; }
+.fav-group h3 {
+  margin: .85rem .9rem .25rem; font-size: .68rem; font-weight: 600; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted);
+}
+.fav-ul { list-style: none; margin: 0; padding: 0; }
+.fav { display: flex; align-items: stretch; }
+.fav-btn {
+  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: .7rem;
+  padding: .22rem .3rem .22rem .9rem; border: 0; background: none; text-align: left;
+  cursor: pointer;
+}
+.fav-btn:hover, .fav:focus-within .fav-btn { background: var(--accent-tint); }
+.fav-name { flex: none; min-width: var(--w, 5ch); font-weight: 700; }
+.fav-def {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--soft);
+  font-size: .8rem;
+}
+.fav-del {
+  flex: none; width: 2rem; border: 0; background: none; color: var(--soft); cursor: pointer;
+  font-size: 1.05rem; opacity: 0;
+}
+.fav:hover .fav-del, .fav:focus-within .fav-del { opacity: 1; }
+.fav-del:hover { color: var(--danger); }
+@media (hover: none) { .fav-del { opacity: .65; } }
+.fav.flash .fav-btn { animation: flash 1.4s ease-out; }
+@keyframes flash { from { background: color-mix(in srgb, var(--accent) 45%, transparent); } }
+.pane-foot { display: flex; flex-wrap: wrap; gap: .4rem; padding: .6rem .9rem; border-top: 1px solid var(--line); }
+.report {
+  position: relative; margin: 0 .9rem .8rem; padding: .55rem 2rem .55rem .7rem;
+  border: 1px solid var(--line-strong); border-radius: 6px; font-size: .8rem; max-height: 14rem;
+  overflow: auto;
+}
+.report.bad { border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.report p { margin: 0; }
+.report ul { margin: .35rem 0 0; padding-left: 1rem; color: var(--soft); }
+.report b { color: var(--danger); font-weight: 600; }
+.report .toast-x { position: absolute; top: .3rem; right: .35rem; color: var(--soft); }
+
+/* ── Expression ────────────────────────────────────────────────────────── */
+.expr-pane { background: var(--bg); }
+.expr-wrap { flex: 1; min-height: 9rem; overflow: auto; padding: 1.4rem 1.6rem 1rem; }
+.expr { font-size: 1.45rem; line-height: 2.35; overflow-wrap: anywhere; user-select: none; -webkit-user-select: none; }
+.empty { font-size: .92rem; line-height: 1.7; color: var(--soft); max-width: 38rem; }
+.empty p { margin: 0 0 .7rem; }
+.examples { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
+.chip {
+  padding: .08rem .7rem; border: 1px solid var(--line-strong); border-radius: 999px;
+  background: var(--surface); color: var(--text); cursor: pointer; font-size: .88rem;
+}
+.chip:hover { border-color: var(--accent); }
+.tm { border-radius: 4px; }
+.tm.hov { outline: 1px solid var(--line-strong); outline-offset: 1px; cursor: pointer; }
+.paren, .lam-head { color: var(--soft); }
+.lam-head .param { color: var(--text); }
+.tm-var.ref { font-weight: 700; }
+.tm-var.free { font-style: italic; }
+.gap { padding: 0 .08em; }
+.expr .rx-fn    { background: color-mix(in srgb, var(--fn) 22%, transparent); }
+.expr .rx-arg   { background: color-mix(in srgb, var(--arg) 24%, transparent); }
+.expr .rx-var   { color: var(--fn); font-weight: 700; }
+.expr .rx-delta { background: color-mix(in srgb, var(--delta) 26%, transparent); box-shadow: inset 0 -2px 0 var(--delta); }
+.expr .bind-hi  { box-shadow: inset 0 -2px 0 var(--accent); }
+.expr .tm.sel   { outline: 2px solid var(--accent); outline-offset: 2px; }
+.slot {
+  display: inline-block; width: 1.15em; height: 1.05em; margin: 0 .25em; vertical-align: -.14em;
+  border: 2px dashed var(--accent); border-radius: 4px; pointer-events: none;
+}
+.ghost {
+  margin: 0 .25em; padding: 0 .25em; border: 1px dashed var(--accent); border-radius: 4px;
+  color: var(--accent); font-weight: 700; pointer-events: none;
+}
+.will-replace { opacity: .42; text-decoration: line-through; }
+
+.expr-info, .sel-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .8rem; padding: .5rem 1.6rem;
+  border-top: 1px solid var(--line);
+}
+.expr-info { min-height: 2.6rem; font-size: .9rem; }
+.expr-info:empty { border-top-color: transparent; }
+.sel-bar { min-height: 2.9rem; font-size: .84rem; }
+.tag { font-size: .68rem; letter-spacing: .13em; text-transform: uppercase; color: var(--muted); }
+.tag.ok { color: var(--ok); }
+.c-fn { color: var(--fn); } .c-arg { color: var(--arg); } .c-delta { color: var(--delta); }
+.dim, .hint { color: var(--soft); }
+.alias { color: var(--accent); font-weight: 700; }
+.note { font-size: .84rem; }
+.note.warn { color: var(--fn); } .note.ok { color: var(--ok); } .note.error { color: var(--danger); }
+.note .link { margin-left: .35rem; }
+.sel-code {
+  max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: .05rem .45rem; border-radius: 4px; background: var(--accent-tint);
+}
+.seg { display: inline-flex; }
+.seg .btn { border-radius: 0; }
+.seg .btn:first-child { border-radius: 6px 0 0 6px; }
+.seg .btn:last-child { border-radius: 0 6px 6px 0; }
+.seg .btn + .btn { margin-left: -1px; }
+
+.row { display: flex; align-items: center; gap: .6rem; padding: .45rem 1.6rem; }
+.term-row { border-top: 1px solid var(--line); padding-top: .7rem; }
+.row-label { min-width: 4.6rem; color: var(--muted); font-size: .84rem; }
+.row input {
+  flex: 1; min-width: 0; padding: .42rem .6rem; border: 1px solid var(--line-strong);
+  border-radius: 6px; background: var(--surface);
+}
+.row input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+#save-name { flex: 0 1 13rem; text-transform: uppercase; }
+.msg { min-height: 1.45rem; padding: 0 1.6rem .3rem calc(1.6rem + 5.2rem); font-size: .84rem; }
+.msg.error {
+  color: var(--danger); } .msg.warn { color: var(--fn); } .msg.ok { color: var(--ok);
+  } .msg.info { color: var(--soft);
+}
+
+/* ── History ───────────────────────────────────────────────────────────── */
+.count {
+  margin-left: auto; letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--soft);
+  font-size: .78rem;
+}
+.history { flex: 1; overflow: auto; margin: 0; padding: .3rem 0 1rem; list-style: none; font-size: .85rem; }
+.h-row {
+  display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); column-gap: .55rem;
+  padding: .3rem .9rem .3rem .2rem; border-left: 3px solid transparent; cursor: pointer;
+}
+.h-row:hover { background: var(--tint); }
+.h-row.cur { border-left-color: var(--accent); background: var(--accent-tint); cursor: default; }
+.h-n { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.h-t { overflow-wrap: anywhere; }
+.h-meta { grid-column: 2; display: flex; flex-wrap: wrap; gap: .1rem .7rem; font-size: .76rem; }
+.h-kind { color: var(--soft); }
+.h-kind.beta { color: var(--fn); }
+.h-kind.delta { color: var(--delta); }
+.h-alias { color: var(--accent); font-weight: 700; }
+.h-gap, .h-note { padding: .35rem .9rem .35rem 3.25rem; font-size: .8rem; color: var(--soft); }
+.h-note.warn { color: var(--fn); } .h-note.ok { color: var(--ok); } .h-note.error { color: var(--danger); }
+.h-empty { padding: .8rem .9rem; color: var(--soft); font-size: .84rem; }
+
+/* ── Footer ────────────────────────────────────────────────────────────── */
+.footer {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .3rem 1.1rem; padding: .4rem 1rem;
+  border-top: 1px solid var(--line); background: var(--surface); color: var(--soft);
+  font-size: .76rem;
+}
+.footer kbd, .pal-item kbd {
+  padding: 0 .35rem; border: 1px solid var(--line-strong); border-radius: 4px; color: var(--text);
+}
+
+/* ── Panels: settings and shortcuts (non-modal), command palette ──────── */
+.panel {
+  position: fixed; z-index: 20; top: .75rem; right: .75rem; bottom: .75rem;
+  width: min(400px, calc(100vw - 1.5rem)); overflow: auto; background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: 10px;
+  box-shadow: 0 18px 50px rgb(0 0 0 / .38);
+}
+.panel-h {
+  position: sticky; top: 0; z-index: 1; display: flex; align-items: center;
+  justify-content: space-between; padding: .65rem 1rem; background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.panel-h h2 { margin: 0; font-size: .95rem; }
+.panel-s { padding: .8rem 1rem; border-bottom: 1px solid var(--line); }
+.panel-s:last-child { border-bottom: 0; }
+.panel-s h3 {
+  margin: 0 0 .55rem; font-size: .68rem; font-weight: 600; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted);
+}
+.panel .hint { margin: .45rem 0 0; font-size: .8rem; }
+.btn-row { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0; }
+.themes { display: grid; gap: .15rem; }
+.theme-opt { display: flex; align-items: center; gap: .65rem; padding: .3rem .45rem; border-radius: 6px; cursor: pointer; }
+.theme-opt:hover { background: var(--tint); }
+.theme-opt input { accent-color: var(--accent); margin: 0; }
+.swatch { display: inline-flex; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 4px; }
+.swatch i { width: .85rem; height: 1.05rem; }
+.swatch i:nth-child(1) { background: var(--bg); }
+.swatch i:nth-child(2) { background: var(--surface); }
+.swatch i:nth-child(3) { background: var(--accent); }
+.field { display: flex; align-items: center; gap: .7rem; }
+.field input {
+  width: 7rem; padding: .3rem .5rem; border: 1px solid var(--line-strong); border-radius: 6px;
+  background: var(--bg);
+}
+.field input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+.field input.invalid { border-color: var(--danger); }
+.inline-choice {
+  margin: .5rem 0; padding: .6rem .7rem; border: 1px solid var(--line-strong); border-radius: 6px;
+  font-size: .82rem;
+}
+.inline-choice p { margin: 0 0 .3rem; }
+.inline-choice.bad { border-color: color-mix(in srgb, var(--danger) 55%, transparent); color: var(--danger); }
+.key-group h3 { margin: 0 0 .3rem; }
+.key-row { display: flex; align-items: center; gap: .45rem; padding: .18rem 0; font-size: .84rem; }
+.key-row .label { flex: 1; min-width: 0; }
+.key-btn { min-width: 6.2rem; justify-content: center; }
+.key-btn.capturing { border-color: var(--accent); background: var(--accent-tint); }
+.key-row .warnmark { color: var(--fn); font-size: .76rem; }
+.key-row .unbind { visibility: hidden; }
+.key-row:hover .unbind:not([disabled]):not(span), .key-row:focus-within .unbind:not([disabled]):not(span) {
+  visibility: visible;
+}
+.key-fixed { min-width: 6.2rem; text-align: center; color: var(--soft); }
+.palette {
+  position: fixed; z-index: 30; top: 12vh; left: 50%; transform: translateX(-50%);
+  width: min(620px, calc(100vw - 2rem)); overflow: hidden; background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: 10px;
+  box-shadow: 0 24px 60px rgb(0 0 0 / .45);
+}
+#pal-input {
+  display: block; width: 100%; padding: .85rem 1rem; border: 0;
+  border-bottom: 1px solid var(--line); background: transparent; font-size: 1rem; outline: none;
+}
+#pal-list { list-style: none; margin: 0; padding: .3rem 0; max-height: min(55vh, 26rem); overflow: auto; }
+.pal-item { display: flex; align-items: baseline; gap: .7rem; padding: .38rem 1rem; cursor: pointer; }
+.pal-item.active { background: var(--accent-tint); }
+.pal-label { white-space: nowrap; }
+.pal-detail {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--soft); font-size: .8rem;
+}
+.pal-tag { color: var(--muted); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; }
+.pal-empty { padding: .7rem 1rem; color: var(--soft); }
+
+/* ── Toasts ────────────────────────────────────────────────────────────── */
+.toasts {
+  position: fixed; z-index: 40; right: 1rem; bottom: 3rem; display: grid; justify-items: end;
+  gap: .5rem; max-width: min(30rem, calc(100vw - 2rem)); pointer-events: none;
+}
+.toast {
+  pointer-events: auto; display: flex; align-items: center; gap: .8rem;
+  padding: .45rem .5rem .45rem 1rem; border-radius: 8px; background: var(--text); color: var(--bg);
+  box-shadow: 0 10px 30px rgb(0 0 0 / .35); font-size: .87rem;
+}
+.toast .btn { background: transparent; color: var(--bg); border-color: color-mix(in srgb, var(--bg) 45%, transparent); }
+.toast-x { border: 0; background: none; color: inherit; cursor: pointer; font-size: 1.05rem; opacity: .7; padding: 0 .3rem; }
+
+/* ── Narrow screens: history below, then everything stacked ───────────── */
+@media (max-width: 1100px) {
+  .panes {
+    grid-template-columns: minmax(200px, 250px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(11rem, 34%);
+  }
+  .hist-pane { grid-column: 1 / -1; border-left: 0 !important; border-top: 1px solid var(--line); }
+}
+@media (max-width: 720px) {
+  .app { height: auto; min-height: 100vh; }
+  .panes { display: flex; flex-direction: column; }
+  .expr-pane { order: -1; }
+  .pane + .pane { border-left: 0; border-top: 1px solid var(--line); }
+  .fav-list { max-height: 46vh; }
+  .history { max-height: 60vh; }
+  .expr-wrap, .expr-info, .sel-bar, .row { padding-left: 1rem; padding-right: 1rem; }
+  .msg { padding-left: 1rem; }
+  .footer { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1 class="brand"><b aria-hidden="true">λ</b> workbench</h1>
+    <div class="toolbar" role="toolbar" aria-label="Reduction">
+      <button type="button" class="btn" data-action="step">Step <kbd data-kbd="step"></kbd></button>
+      <button type="button" class="btn" data-action="undo">Undo <kbd data-kbd="undo"></kbd></button>
+      <button type="button" class="btn primary" data-action="eval"><span id="eval-label">Eval</span> <kbd data-kbd="eval"></kbd></button>
+      <button type="button" class="btn subtle" data-action="clear">Clear</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="toolbar" aria-label="App">
+      <button type="button" class="btn" data-action="palette">Commands <kbd data-kbd="palette"></kbd></button>
+      <button type="button" class="btn icon" data-action="help" aria-label="Keyboard shortcuts">?</button>
+      <button type="button" class="btn icon" data-action="theme.next" aria-label="Next theme">◐</button>
+      <button type="button" class="btn icon" data-action="settings" aria-label="Settings">⚙</button>
+    </div>
+  </header>
+
+  <main class="panes">
+    <section class="pane fav-pane" aria-labelledby="fav-h">
+      <h2 class="pane-h" id="fav-h">Favorites</h2>
+      <div class="fav-list" id="fav-list"></div>
+      <div class="pane-foot">
+        <button type="button" class="btn small" data-action="fav.export">Export</button>
+        <button type="button" class="btn small" data-action="fav.import">Import</button>
+        <button type="button" class="btn small subtle" data-action="fav.defaults">Defaults</button>
+      </div>
+      <div class="report" id="fav-report" hidden></div>
+    </section>
+
+    <section class="pane expr-pane" aria-labelledby="expr-h">
+      <h2 class="pane-h" id="expr-h">Expression
+        <span class="tools"><button type="button" class="link" data-action="term.edit">edit as text</button></span>
+      </h2>
+      <div class="expr-wrap" id="expr-wrap">
+        <div class="expr" id="expr" aria-label="Current expression"></div>
+      </div>
+      <div class="expr-info" id="expr-info" aria-live="polite"></div>
+      <div class="sel-bar" id="sel-bar"></div>
+      <form class="row term-row" id="term-form" autocomplete="off">
+        <label class="row-label" for="term-input">term</label>
+        <input id="term-input" type="text" spellcheck="false" autocapitalize="off" placeholder="type a term, e.g.  PLUS 2 3  or  \x.x x  · Enter sets it">
+      </form>
+      <div class="msg" id="term-msg" aria-live="polite"></div>
+      <form class="row save-row" id="save-form" autocomplete="off">
+        <label class="row-label" for="save-name">save as</label>
+        <input id="save-name" type="text" spellcheck="false" autocapitalize="characters" maxlength="24" placeholder="NAME">
+        <button type="submit" class="btn small" id="save-btn">Save</button>
+      </form>
+      <div class="msg" id="status" role="status" aria-live="polite"></div>
+    </section>
+
+    <section class="pane hist-pane" aria-labelledby="hist-h">
+      <h2 class="pane-h" id="hist-h">History <span class="count" id="hist-count"></span></h2>
+      <ol class="history" id="history"></ol>
+    </section>
+  </main>
+
+  <footer class="footer" id="footer"></footer>
+</div>
+
+<aside class="panel" id="settings" hidden aria-labelledby="settings-h">
+  <div class="panel-h">
+    <h2 id="settings-h">Settings</h2>
+    <button type="button" class="btn icon" data-action="panel.close" aria-label="Close settings">×</button>
+  </div>
+  <section class="panel-s">
+    <h3>Theme</h3>
+    <div class="themes" id="theme-list" role="radiogroup" aria-label="Theme"></div>
+  </section>
+  <section class="panel-s">
+    <h3>Evaluation</h3>
+    <label class="field">Step limit <input id="set-limit" type="number" min="1" max="10000" step="1" inputmode="numeric"></label>
+    <p class="hint" id="limit-hint">Eval stops after this many steps. Default 100.</p>
+  </section>
+  <section class="panel-s">
+    <h3>Keyboard</h3>
+    <button type="button" class="btn small" data-action="help">Shortcuts and rebinding</button>
+  </section>
+  <section class="panel-s">
+    <h3>Data</h3>
+    <div class="btn-row">
+      <button type="button" class="btn small" data-action="data.backup">Back up (.json)</button>
+      <button type="button" class="btn small" data-action="data.restore">Restore…</button>
+    </div>
+    <div class="inline-choice" id="restore-choice" hidden></div>
+    <div class="btn-row"><button type="button" class="btn small danger" data-action="data.clear">Clear all data…</button></div>
+    <div class="inline-choice" id="clear-choice" hidden></div>
+    <p class="hint">Backups hold everything: favorites, settings, shortcuts and the current run. Favorites alone export as plain text from the Favorites pane.</p>
+  </section>
+  <section class="panel-s">
+    <button type="button" class="btn small" data-action="settings.reset">Reset settings</button>
+    <p class="hint">Restores theme, step limit and shortcuts. Favorites are kept.</p>
+  </section>
+</aside>
+
+<aside class="panel" id="help" hidden aria-labelledby="help-h">
+  <div class="panel-h">
+    <h2 id="help-h">Keyboard shortcuts</h2>
+    <button type="button" class="btn icon" data-action="panel.close" aria-label="Close shortcuts">×</button>
+  </div>
+  <p class="panel-s hint">Click a shortcut, then press the new keys (Esc cancels). Shortcuts are ignored while you type in a field.</p>
+  <div id="help-list"></div>
+  <section class="panel-s"><button type="button" class="btn small" data-action="keys.reset">Reset shortcuts</button></section>
+</aside>
+
+<div class="palette" id="palette" hidden role="dialog" aria-label="Command palette">
+  <input id="pal-input" type="text" spellcheck="false" autocomplete="off" placeholder="Run a command or insert a favorite…" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list">
+  <ul id="pal-list" role="listbox"></ul>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<input type="file" id="file-defs" accept=".txt,text/plain" hidden>
+<input type="file" id="file-backup" accept=".json,application/json" hidden>
+
+<script id="lambda-core">
+/* ════════════════════════════════════════════════════════════════════════
+   PURE CORE
+   Terms, parser, printer, capture-avoiding substitution, normal-order
+   reduction, α-equivalence, definition files and self-tests.
+   Nothing in this script touches the DOM. Every function is a pure function
+   of its arguments; the only state is invisible memoisation of immutable data.
+   ════════════════════════════════════════════════════════════════════════ */
+const Lambda = (() => {
+'use strict';
+
+/* ── Limits ────────────────────────────────────────────────────────────── */
+const STEP_LIMIT     = 100;    // default number of steps Eval may take (editable in Settings)
+const MAX_TERM_SIZE  = 10000;  // reduction stops before a term grows past this many nodes …
+const MAX_DEPTH      = 2000;   // … or nests deeper than this, which keeps recursion safe
+const MAX_NUMERAL    = 1000;   // digits up to this are Church numerals even when not saved
+const ALIAS_NUMERALS = 20;     // Church numerals 0–20 are recognised as aliases automatically
+
+/* ── Terms ─────────────────────────────────────────────────────────────── */
+// Var(name) | Lam(param, body) | App(fn, arg), as frozen plain objects.
+// Lowercase names are variables. Names starting with an UPPERCASE letter or a
+// digit are references to saved terms; they are never bound by a λ.
+const Var = name => Object.freeze({ type: 'var', name });
+const Lam = (param, body) => Object.freeze({ type: 'lam', param, body });
+const App = (fn, arg) => Object.freeze({ type: 'app', fn, arg });
+
+const isRefName     = name => /^[A-Z0-9]/.test(name);
+const isRef         = t => t.type === 'var' && isRefName(t.name);
+const isValidName   = s => /^(?:[A-Z][A-Z0-9_]*|[0-9]+)$/.test(s);   // names you can save under
+const isNumeralName = s => /^(?:0|[1-9][0-9]*)$/.test(s);
+
+/* ── Parser ────────────────────────────────────────────────────────────── */
+// term  := λ params . term  |  atom+ [λ params . term]
+// atom  := variable | NAME | digits | ( term )
+// Application is left-associative; a λ body extends as far right as possible.
+class LambdaSyntaxError extends Error {
+  constructor(message, pos = 0) { super(message); this.name = 'LambdaSyntaxError'; this.pos = pos; }
+}
+
+function tokenize(src) {
+  // groups: 1 blank/comment, 2 λ, 3 punctuation, 4 variable, 5 reference, 6 anything else
+  const re = /(\s+|#[^\n]*)|([λ\\])|([.()])|([a-z_][A-Za-z0-9_]*'*)|([A-Z][A-Za-z0-9_]*|[0-9]+)|(.)/suy;
+  const tokens = [];
+  let m;
+  while (re.lastIndex < src.length && (m = re.exec(src))) {
+    const pos = m.index;
+    if (m[1]) continue;
+    if (m[2]) tokens.push({ type: 'λ', text: m[2], pos });
+    else if (m[3]) tokens.push({ type: m[3], text: m[3], pos });
+    else if (m[4]) tokens.push({ type: 'var', text: m[4], pos });
+    else if (m[5]) tokens.push({ type: 'ref', text: m[5], pos });
+    else throw new LambdaSyntaxError(`unexpected character '${m[6]}' at column ${pos + 1}`, pos);
+  }
+  tokens.push({ type: 'end', text: '', pos: src.length });
+  return tokens;
+}
+
+function parse(src) {
+  const tokens = tokenize(String(src));
+  let i = 0;
+  const peek = () => tokens[i];
+  const describe = t => (t.type === 'end' ? 'the end' : `'${t.text}'`);
+  const fail = (message, t = peek()) => {
+    throw new LambdaSyntaxError(`${message} at column ${t.pos + 1}`, t.pos);
+  };
+  const startsAtom = t => t.type === 'var' || t.type === 'ref' || t.type === '(';
+
+  function term() {
+    if (peek().type === 'λ') return lambda();
+    let left = atom();
+    for (;;) {
+      if (peek().type === 'λ') return App(left, lambda());   // trailing λ takes the rest
+      if (!startsAtom(peek())) return left;
+      left = App(left, atom());                               // left-associative
+    }
+  }
+  function lambda() {                                         // λx y.b ≡ λx.λy.b
+    i++;
+    const params = [];
+    while (peek().type === 'var') params.push(tokens[i++].text);
+    if (peek().type === 'ref') fail(`parameter '${peek().text}' must start with a lowercase letter`);
+    if (!params.length) fail(`expected a parameter after λ, found ${describe(peek())}`);
+    if (peek().type !== '.') fail(`expected '.' after λ${params.join(' ')}, found ${describe(peek())}`);
+    i++;
+    if (!startsAtom(peek()) && peek().type !== 'λ') fail(`expected a body after '.', found ${describe(peek())}`);
+    const body = term();
+    return params.reduceRight((b, p) => Lam(p, b), body);
+  }
+  function atom() {
+    const t = peek();
+    if (t.type === 'var' || t.type === 'ref') { i++; return Var(t.text); }
+    if (t.type === '(') {
+      i++;
+      const inner = term();
+      if (peek().type !== ')') fail(`expected ')' for the '(' at column ${t.pos + 1}, found ${describe(peek())}`);
+      i++;
+      return inner;
+    }
+    return fail(t.type === 'end' ? 'unexpected end of term' : `unexpected ${describe(t)}`, t);
+  }
+
+  try {
+    if (peek().type === 'end') throw new LambdaSyntaxError('empty term', 0);
+    const result = term();
+    if (peek().type !== 'end') fail(`unexpected ${describe(peek())}`);
+    return result;
+  } catch (e) {
+    if (e instanceof RangeError) throw new LambdaSyntaxError('term is nested too deeply', 0);
+    throw e;
+  }
+}
+
+/* ── Printer ───────────────────────────────────────────────────────────── */
+// Minimal parentheses: a λ in function position and any non-variable argument
+// are wrapped; application chains and λ bodies need none.
+const parenAsFn  = t => t.type === 'lam';
+const parenAsArg = t => t.type !== 'var';
+const wrap = (s, yes) => (yes ? `(${s})` : s);
+
+function print(t) {
+  switch (t.type) {
+    case 'var': return t.name;
+    case 'lam': return `λ${t.param}.${print(t.body)}`;
+    default:    return `${wrap(print(t.fn), parenAsFn(t.fn))} ${wrap(print(t.arg), parenAsArg(t.arg))}`;
+  }
+}
+
+/* ── Free variables, references ────────────────────────────────────────── */
+const NO_NAMES = new Set();
+const fvMemo = new WeakMap();   // term → Set of free lowercase variables (terms are immutable)
+
+const subsetOf = (a, b) => { for (const x of a) if (!b.has(x)) return false; return true; };
+
+function freeVars(t) {
+  let fv = fvMemo.get(t);
+  if (fv) return fv;
+  if (t.type === 'var') fv = isRefName(t.name) ? NO_NAMES : new Set([t.name]);
+  else if (t.type === 'lam') {
+    const b = freeVars(t.body);
+    fv = b.has(t.param) ? new Set([...b].filter(n => n !== t.param)) : b;
+  } else {
+    const f = freeVars(t.fn), a = freeVars(t.arg);
+    fv = subsetOf(a, f) ? f : subsetOf(f, a) ? a : new Set([...f, ...a]);
+  }
+  fvMemo.set(t, fv);
+  return fv;
+}
+const freeVariables = t => [...freeVars(t)];           // public: a fresh array
+const occursFree = (name, t) => freeVars(t).has(name);
+
+function refsOf(t, acc = new Set()) {
+  if (t.type === 'var') { if (isRefName(t.name)) acc.add(t.name); }
+  else if (t.type === 'lam') refsOf(t.body, acc);
+  else { refsOf(t.fn, acc); refsOf(t.arg, acc); }
+  return acc;
+}
+
+/* ── Capture-avoiding substitution ─────────────────────────────────────── */
+// fresh('y', taken) → y', y'', … the first name for which taken() is false.
+function fresh(name, taken) {
+  let n = `${name}'`;
+  while (taken(n)) n += "'";
+  return n;
+}
+
+// subst(t, x, s) = t[x := s]. Bound variables that would capture a free
+// variable of s are renamed first. Unchanged subterms are shared, not copied.
+function subst(t, x, s) {
+  if (!freeVars(t).has(x)) return t;
+  switch (t.type) {
+    case 'var': return s;                                   // t is x itself
+    case 'app': return App(subst(t.fn, x, s), subst(t.arg, x, s));
+    default: {                                              // λ whose param ≠ x
+      const fvS = freeVars(s);
+      if (!fvS.has(t.param)) return Lam(t.param, subst(t.body, x, s));
+      const fvB = freeVars(t.body);
+      const y = fresh(t.param, n => fvS.has(n) || fvB.has(n));
+      return Lam(y, subst(subst(t.body, t.param, Var(y)), x, s));
+    }
+  }
+}
+
+// Replace references: f(name) returns a closed term or null to keep the name.
+function mapRefs(t, f) {
+  switch (t.type) {
+    case 'var': return (isRefName(t.name) && f(t.name)) || t;
+    case 'lam': { const b = mapRefs(t.body, f); return b === t.body ? t : Lam(t.param, b); }
+    default: {
+      const fn = mapRefs(t.fn, f), arg = mapRefs(t.arg, f);
+      return fn === t.fn && arg === t.arg ? t : App(fn, arg);
+    }
+  }
+}
+const substRef = (t, name, def) => mapRefs(t, n => (n === name ? def : null));
+
+/* ── Paths ─────────────────────────────────────────────────────────────── */
+// A path addresses a subterm: a string of steps 'f' (function of an
+// application), 'a' (its argument) and 'b' (body of a λ). '' is the root.
+function childAt(t, step) {
+  if (t.type === 'app') return step === 'f' ? t.fn : step === 'a' ? t.arg : null;
+  if (t.type === 'lam') return step === 'b' ? t.body : null;
+  return null;
+}
+function subtermAt(t, path) {
+  for (const step of path) { t = childAt(t, step); if (!t) return null; }
+  return t;
+}
+function replaceAt(t, path, sub) {
+  const spine = [];
+  for (const step of path) {
+    spine.push(t);
+    t = childAt(t, step);
+    if (!t) throw new Error(`no subterm at path '${path}'`);
+  }
+  let out = sub;
+  for (let i = path.length - 1; i >= 0; i--) {
+    const p = spine[i];
+    out = path[i] === 'f' ? App(out, p.arg) : path[i] === 'a' ? App(p.fn, out) : Lam(p.param, out);
+  }
+  return out;
+}
+
+// Node count and nesting depth, without recursion.
+function measure(t) {
+  let size = 0, depth = 0;
+  const stack = [t, 1];
+  while (stack.length) {
+    const d = stack.pop(), n = stack.pop();
+    size++;
+    if (d > depth) depth = d;
+    if (n.type === 'lam') stack.push(n.body, d + 1);
+    else if (n.type === 'app') stack.push(n.fn, d + 1, n.arg, d + 1);
+  }
+  return { size, depth };
+}
+
+/* ── Definitions ───────────────────────────────────────────────────────── */
+// An env wraps a Map of saved, closed definitions. Digits that are not saved
+// resolve to Church numerals. The memo tables only cache pure results.
+const makeEnv = defs => Object.freeze({ defs, memo: { unfold: new Map(), canon: new Map(), size: new Map() } });
+
+const churchMemo = new Map();
+function churchNumeral(n) {
+  let t = churchMemo.get(n);
+  if (!t) {
+    let body = Var('x');
+    for (let k = 0; k < n; k++) body = App(Var('f'), body);
+    churchMemo.set(n, (t = Lam('f', Lam('x', body))));
+  }
+  return t;
+}
+
+function lookup(env, name) {
+  const def = env.defs.get(name);
+  if (def) return def;
+  if (isNumeralName(name) && Number(name) <= MAX_NUMERAL) return churchNumeral(Number(name));
+  return null;
+}
+
+/* ── Normal-order reduction ────────────────────────────────────────────── */
+// Names expand only when reduction needs them: in function position (where
+// expanding creates a β-redex), or anywhere if the definition is not itself in
+// normal form (OMEGA, Y). A normal definition such as TRUE stays folded.
+function needsUnfold(env, name) {
+  const memo = env.memo.unfold;
+  if (!memo.has(name)) {
+    memo.set(name, false);                         // provisional: guards against cycles
+    const def = lookup(env, name);
+    memo.set(name, !!def && findRedex(def, env) !== null);
+  }
+  return memo.get(name);
+}
+
+// The leftmost-outermost redex: { kind: 'beta', path } or { kind: 'delta', path, name }.
+function findRedex(t, env, path = '') {
+  switch (t.type) {
+    case 'var':
+      return isRefName(t.name) && needsUnfold(env, t.name) ? { kind: 'delta', path, name: t.name } : null;
+    case 'lam':
+      return findRedex(t.body, env, path + 'b');
+    default:
+      if (t.fn.type === 'lam') return { kind: 'beta', path };
+      if (isRef(t.fn) && lookup(env, t.fn.name)) return { kind: 'delta', path: path + 'f', name: t.fn.name };
+      return findRedex(t.fn, env, path + 'f') || findRedex(t.arg, env, path + 'a');
+  }
+}
+
+// One step: { term, redex } or null when t is in normal form.
+function step(t, env) {
+  const redex = findRedex(t, env);
+  if (!redex) return null;
+  const at = subtermAt(t, redex.path);
+  const out = redex.kind === 'beta' ? subst(at.fn.body, at.fn.param, at.arg) : lookup(env, redex.name);
+  return { term: replaceAt(t, redex.path, out), redex };
+}
+
+// Reduce until normal form, the step limit, or a term that grows too large.
+// reason: 'normal' | 'limit' | 'size'
+function normalize(t, env, { limit = STEP_LIMIT, maxSize = MAX_TERM_SIZE, maxDepth = MAX_DEPTH } = {}) {
+  let steps = 0;
+  for (;;) {
+    const s = step(t, env);
+    if (!s) return { term: t, steps, reason: 'normal' };
+    if (steps >= limit) return { term: t, steps, reason: 'limit' };
+    const m = measure(s.term);
+    if (m.size > maxSize || m.depth > maxDepth) return { term: t, steps, reason: 'size', ...m };
+    t = s.term;
+    steps++;
+  }
+}
+
+/* ── α-equivalence via de Bruijn indices ───────────────────────────────── */
+// λx.λy.x → "λλ1". Bound variables become indices (0 = nearest λ), free
+// variables keep their names, applications are "(f a)". With an env, saved
+// names are replaced by their definitions, so FALSE and λa.λb.b compare equal.
+function toDeBruijn(term, env = null) {
+  const out = [];
+  const binders = new Map();          // name → stack of binding depths
+  let depth = 0;
+  const go = t => {
+    if (t.type === 'var') {
+      if (isRefName(t.name)) out.push(env && lookup(env, t.name) ? refCanon(env, t.name) : `{${t.name}}`);
+      else {
+        const stack = binders.get(t.name);
+        out.push(stack && stack.length ? String(depth - 1 - stack[stack.length - 1]) : t.name);
+      }
+    } else if (t.type === 'lam') {
+      let stack = binders.get(t.param);
+      if (!stack) binders.set(t.param, (stack = []));
+      stack.push(depth++);
+      out.push('λ');
+      go(t.body);
+      stack.pop();
+      depth--;
+    } else {
+      out.push('(');
+      go(t.fn);
+      out.push(' ');
+      go(t.arg);
+      out.push(')');
+    }
+  };
+  go(term);
+  return out.join('');
+}
+function refCanon(env, name) {        // definitions are closed, so their form is context-free
+  const memo = env.memo.canon;
+  if (!memo.has(name)) {
+    memo.set(name, `{${name}}`);
+    memo.set(name, toDeBruijn(lookup(env, name), env));
+  }
+  return memo.get(name);
+}
+const alphaEq = (a, b, env = null) => toDeBruijn(a, env) === toDeBruijn(b, env);
+
+// Size after unfolding every saved name (a cheap pre-filter for alias lookup).
+function expandedSize(t, env) {
+  if (t.type === 'var') return isRefName(t.name) && lookup(env, t.name) ? refSize(env, t.name) : 1;
+  if (t.type === 'lam') return 1 + expandedSize(t.body, env);
+  return 1 + expandedSize(t.fn, env) + expandedSize(t.arg, env);
+}
+function refSize(env, name) {
+  const memo = env.memo.size;
+  if (!memo.has(name)) { memo.set(name, 1); memo.set(name, expandedSize(lookup(env, name), env)); }
+  return memo.get(name);
+}
+
+// Canonical form → names, for the given saved names plus Church numerals 0–20.
+function aliasIndex(env, names) {
+  const byKey = new Map(), sizes = new Set();
+  const add = (name, t) => {
+    const key = toDeBruijn(t, env);
+    const list = byKey.get(key);
+    if (!list) byKey.set(key, [name]);
+    else if (!list.includes(name)) list.push(name);
+    sizes.add(expandedSize(t, env));
+  };
+  for (const name of names) { const def = lookup(env, name); if (def) add(name, def); }
+  for (let n = 0; n <= ALIAS_NUMERALS; n++) if (!env.defs.has(String(n))) add(String(n), churchNumeral(n));
+  return { byKey, sizes };
+}
+function aliasesOf(t, index, env) {
+  if (!index.sizes.has(expandedSize(t, env))) return [];
+  return (index.byKey.get(toDeBruijn(t, env)) || []).slice();
+}
+
+/* ── Definition files ──────────────────────────────────────────────────── */
+// Plain text, one definition per line:   NAME = term    # comment
+// Optional [Group] lines group the definitions after them. Parsed strictly as
+// data by the parser above: nothing is ever evaluated as JavaScript.
+const FILE_HEADER = [
+  '# λ workbench — saved terms. One definition per line:  NAME = term',
+  '# NAME is UPPERCASE letters, digits and _ (or just digits). # starts a comment.',
+  '# [Group] lines group the definitions below them. Terms use λx.body or \\x.body,',
+  '# λx y.body for several parameters, and juxtaposition for application.',
+];
+const cleanGroup = g => String(g || '').replace(/[[\]#\r\n]/g, '').trim().slice(0, 40) || 'Saved';
+
+function parseDefinitions(text) {
+  const entries = [], errors = [], seen = new Map();
+  let group = null;
+  String(text).replace(/^﻿/, '').split(/\r\n|\r|\n/).forEach((raw, i) => {
+    const line = i + 1;
+    const code = raw.replace(/#.*/, '').trim();
+    if (!code) return;
+    const header = /^\[([^\]]*)\]$/.exec(code);
+    if (header) {
+      if (header[1].trim()) group = cleanGroup(header[1]);
+      else errors.push({ line, message: 'empty group name' });
+      return;
+    }
+    const m = /^([^\s=]+)\s*=(.*)$/.exec(code);
+    if (!m) return errors.push({ line, message: "expected 'NAME = term'" });
+    const name = m[1];
+    if (!isValidName(name)) return errors.push({ line, message: `'${name}' is not a valid name (UPPERCASE letters, digits, _)` });
+    if (seen.has(name)) return errors.push({ line, message: `${name} is already defined on line ${seen.get(name)}` });
+    let term;
+    try { term = parse(m[2]); } catch (e) {
+      return errors.push({ line, message: e instanceof LambdaSyntaxError ? e.message.replace(/ at column \d+/, '') : String(e) });
+    }
+    const free = freeVariables(term);
+    if (free.length) return errors.push({ line, message: `free variable ${free[0]} (definitions must be closed)` });
+    const { depth } = measure(term);
+    if (depth > MAX_DEPTH) return errors.push({ line, message: 'term is nested too deeply' });
+    seen.set(name, line);
+    entries.push({ name, term, group, line });
+  });
+  return { entries, errors };
+}
+
+// Paths through saved definitions from `start` back to itself, if any.
+function findCycle(start, graph) {
+  const path = [start], visited = new Set();
+  const dfs = n => {
+    for (const m of graph.get(n) || []) {
+      if (m === start) { path.push(m); return true; }
+      if (visited.has(m)) continue;
+      visited.add(m);
+      path.push(m);
+      if (dfs(m)) return true;
+      path.pop();
+    }
+    return false;
+  };
+  return dfs(start) ? path : null;
+}
+
+// Keep the entries whose names all resolve (against base + each other) and
+// that do not define themselves in a circle. Repeats until stable, because
+// dropping one entry can orphan another.
+function checkDefinitions(entries, base = new Map()) {
+  const errors = [];
+  let pending = entries.slice();
+  for (;;) {
+    const combined = new Map(base);
+    for (const e of pending) combined.set(e.name, e.term);
+    const env = makeEnv(combined);
+    const bad = new Map();
+    for (const e of pending) {
+      for (const r of refsOf(e.term)) {
+        if (!lookup(env, r)) { bad.set(e, `unknown name ${r}`); break; }
+      }
+    }
+    if (!bad.size) {
+      const graph = new Map([...combined].map(([n, t]) => [n, [...refsOf(t)].filter(r => combined.has(r))]));
+      for (const e of pending) {
+        const cycle = findCycle(e.name, graph);
+        if (cycle) bad.set(e, `circular definition ${cycle.join(' → ')}`);
+      }
+    }
+    if (!bad.size) return { accepted: pending, errors: errors.sort((a, b) => a.line - b.line) };
+    for (const [e, message] of bad) errors.push({ line: e.line, name: e.name, message });
+    pending = pending.filter(e => !bad.has(e));
+  }
+}
+
+function serializeDefinitions(items, { header = true } = {}) {
+  const lines = header ? FILE_HEADER.slice() : [];
+  const groups = [];
+  for (const it of items) if (!groups.includes(cleanGroup(it.group))) groups.push(cleanGroup(it.group));
+  for (const g of groups) {
+    const members = items.filter(it => cleanGroup(it.group) === g);
+    const width = Math.max(...members.map(m => m.name.length));
+    if (lines.length) lines.push('');
+    lines.push(`[${g}]`);
+    for (const m of members) lines.push(`${m.name.padEnd(width)} = ${print(m.term)}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+// Does the saved definition of `from` mention `target`, directly or not?
+function reaches(env, from, target, seen = new Set()) {
+  if (seen.has(from)) return false;
+  seen.add(from);
+  const def = env.defs.get(from);
+  if (!def) return false;
+  for (const r of refsOf(def)) if (r === target || reaches(env, r, target, seen)) return true;
+  return false;
+}
+// Before saving t as `target`, unfold every name in t that leads back to
+// `target` (FOO = SUCC FOO keeps the old FOO inside), so no cycle can form.
+function inlineReaching(t, target, env) {
+  return mapRefs(t, r => {
+    if (r === target) { const old = lookup(env, r); return old ? inlineReaching(old, target, env) : null; }
+    return reaches(env, r, target) ? inlineReaching(env.defs.get(r), target, env) : null;
+  });
+}
+
+/* ── Defaults shipped with the file ────────────────────────────────────── */
+const DEFAULTS = `
+[Booleans]
+TRUE  = λt.λf.t
+FALSE = λt.λf.f
+AND   = λp.λq.p q p
+OR    = λp.λq.p p q
+NOT   = λp.p FALSE TRUE
+IF    = λp.λa.λb.p a b
+
+[Numerals]
+0 = λf.λx.x
+1 = λf.λx.f x
+2 = λf.λx.f (f x)
+3 = λf.λx.f (f (f x))
+4 = λf.λx.f (f (f (f x)))
+5 = λf.λx.f (f (f (f (f x))))
+
+[Arithmetic]
+SUCC   = λn.λf.λx.f (n f x)
+PRED   = λn.λf.λx.n (λg.λh.h (g f)) (λu.x) (λu.u)
+PLUS   = λm.λn.λf.λx.m f (n f x)
+MULT   = λm.λn.λf.m (n f)
+ISZERO = λn.n (λx.FALSE) TRUE
+
+[Combinators]
+I     = λx.x
+K     = λx.λy.x
+S     = λx.λy.λz.x z (y z)
+Y     = λf.(λx.f (x x)) (λx.f (x x))
+OMEGA = (λx.x x) (λx.x x)
+`;
+let defaultsMemo = null;
+function defaultEntries() {
+  if (!defaultsMemo) defaultsMemo = Object.freeze(checkDefinitions(parseDefinitions(DEFAULTS).entries).accepted);
+  return defaultsMemo;
+}
+
+/* ── Self-tests: runTests() from the console ───────────────────────────── */
+function runTests({ log = typeof console !== 'undefined' ? console.log.bind(console) : () => {} } = {}) {
+  const env = makeEnv(new Map(defaultEntries().map(e => [e.name, e.term])));
+  const P = parse;
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const same = (a, b) => toDeBruijn(a) === toDeBruijn(b);       // α-equal, names not expanded
+  const results = [];
+  const check = (name, fn) => {
+    let ok = false, detail = '';
+    try {
+      const r = fn();
+      ok = r === true;
+      if (!ok) detail = typeof r === 'string' ? r : `returned ${String(r)}`;
+    } catch (e) { detail = `threw ${e && e.message ? e.message : e}`; }
+    results.push({ name, ok, detail });
+  };
+  const all = (...checks) => { for (const c of checks) { const r = c(); if (r !== true) return r; } return true; };
+  const nf = (src, opts) => normalize(P(src), env, opts);
+  const reduces = (src, expected) => () => {
+    const r = nf(src);
+    if (r.reason !== 'normal') return `${src}: no normal form within ${STEP_LIMIT} steps (${r.reason})`;
+    return alphaEq(r.term, P(expected), env) || `${src} gave ${print(r.term)}`;
+  };
+  const rejects = src => () => {
+    try { P(src); } catch (e) { return e instanceof LambdaSyntaxError || `wrong error for ${src}`; }
+    return `accepted ${JSON.stringify(src)}`;
+  };
+
+  // The checks asked for
+  check('PLUS 2 3 → 5', reduces('PLUS 2 3', '5'));
+  check('MULT 2 3 → 6', reduces('MULT 2 3', '6'));
+  check('AND TRUE FALSE → FALSE', reduces('AND TRUE FALSE', 'FALSE'));
+  check('NOT (NOT TRUE) → TRUE', reduces('NOT (NOT TRUE)', 'TRUE'));
+  check('λx.λy.x ≡α λa.λb.a', () => alphaEq(P('λx.λy.x'), P('λa.λb.a')));
+  check("capture: (λx.λy.x) y → λy'.y, not λy.y", () => {
+    const s = step(P('(λx.λy.x) y'), env);
+    const out = s && print(s.term);
+    return (out === "λy'.y" && !alphaEq(s.term, P('λy.y'))) || `got ${out}`;
+  });
+  check('OMEGA stops at STEP_LIMIT without hanging', () => {
+    const t0 = now();
+    const r = nf('OMEGA', { limit: STEP_LIMIT });
+    const ms = now() - t0;
+    return (r.reason === 'limit' && r.steps === STEP_LIMIT && ms < 1000 && alphaEq(r.term, P('(λx.x x) (λx.x x)')))
+      || `reason ${r.reason}, ${r.steps} steps, ${Math.round(ms)} ms`;
+  });
+
+  // Parser and printer
+  check('parser: \\x.x is λx.x', () => same(P('\\x.x'), P('λx.x')));
+  check('parser: λx y.x is λx.λy.x', () => same(P('λx y.x'), P('λx.λy.x')));
+  check('parser: application is left-associative', () => same(P('a b c'), P('(a b) c')) && !same(P('a b c'), P('a (b c)')));
+  check('parser: a λ body extends to the right', () => same(P('λx.x y'), P('λx.(x y)')));
+  check('parser: rejects malformed terms', () => all(...['', 'λ.x', '(x', 'x)', 'λx.', 'λX.x', 'x = y', 'f (λ)'].map(rejects)));
+  check('printer: minimal parentheses', () => {
+    const cases = [['(λx.x) y', '(λx.x) y'], ['f (g x)', 'f (g x)'], ['((f g) x)', 'f g x'],
+      ['λx.(λy.(x y))', 'λx.λy.x y'], ['f (λx.x)', 'f (λx.x)'], ['(λx.x) (λy.y) z', '(λx.x) (λy.y) z']];
+    for (const [src, want] of cases) { const got = print(P(src)); if (got !== want) return `${src} printed as ${got}`; }
+    return true;
+  });
+  check('printer: output parses back to the same term', () =>
+    defaultEntries().every(e => same(P(print(e.term)), e.term)) || 'a default did not round-trip');
+
+  // Reduction
+  check('SUCC 4 → 5', reduces('SUCC 4', '5'));
+  check('PRED 3 → 2 and PRED 0 → 0', () => all(reduces('PRED 3', '2'), reduces('PRED 0', '0')));
+  check('ISZERO 0 → TRUE, ISZERO 2 → FALSE', () => all(reduces('ISZERO 0', 'TRUE'), reduces('ISZERO 2', 'FALSE')));
+  check('IF FALSE 1 2 → 2, OR FALSE TRUE → TRUE', () => all(reduces('IF FALSE 1 2', '2'), reduces('OR FALSE TRUE', 'TRUE')));
+  check('AND (NOT TRUE) FALSE → FALSE', reduces('AND (NOT TRUE) FALSE', 'FALSE'));
+  check('normal order skips a divergent argument: K I OMEGA → I', reduces('K I OMEGA', 'I'));
+  check('unsaved digits are numerals: PLUS 7 8 → 15', reduces('PLUS 7 8', '15'));
+  check('normal definitions stay folded: K TRUE → λy.TRUE', () => print(nf('K TRUE').term) === 'λy.TRUE' || print(nf('K TRUE').term));
+  check('Y has no normal form: stops at STEP_LIMIT', () => nf('Y').reason === 'limit' || nf('Y').reason);
+  check('size guard stops runaway growth', () => nf('(λx.x x x) (λx.x x x)', { limit: 1e4, maxSize: 200 }).reason === 'size');
+  check('unknown names are inert constants', () => nf('FOO (λx.x) 2').reason === 'normal');
+
+  // Aliases and definition files
+  check('aliases: = 5, = 20 (not saved), λa.λb.a = TRUE, K', () => {
+    const idx = aliasIndex(env, [...env.defs.keys()]);
+    const a5 = aliasesOf(nf('PLUS 2 3').term, idx, env);
+    const a20 = aliasesOf(nf('MULT 4 5').term, idx, env);
+    const aT = aliasesOf(P('λa.λb.a'), idx, env);
+    return (a5.includes('5') && a20.includes('20') && aT.includes('TRUE') && aT.includes('K')) || `5: ${a5} · 20: ${a20} · TRUE: ${aT}`;
+  });
+  check('definition files: comments, groups, bad lines reported and skipped', () => {
+    const text = ['# comment', '[Mine]', 'ID = λx.x   # identity', 'not a definition', 'TWICE = λf.λx.f (f x)',
+      'lower = λx.x', 'BROKEN = λx.(x', 'OPEN = λx.y', 'TWICE = I'].join('\n');
+    const { entries, errors } = parseDefinitions(text);
+    const names = entries.map(e => e.name).join(','), lines = errors.map(e => e.line).join(',');
+    return (names === 'ID,TWICE' && lines === '4,6,7,8,9' && entries[0].group === 'Mine') || `entries ${names}; bad lines ${lines}`;
+  });
+  check('definition files: unknown names and cycles are rejected', () => {
+    const { entries } = parseDefinitions('A = λx.B x\nB = λx.A x\nC = λx.NOPE\nD = λx.TRUE x');
+    const { accepted, errors } = checkDefinitions(entries, env.defs);
+    const names = accepted.map(e => e.name).join();
+    return (names === 'D' && errors.length === 3) || `accepted ${names}; ${errors.map(e => e.message).join('; ')}`;
+  });
+  check('export → import round trip is lossless', () => {
+    const items = defaultEntries().map(e => ({ name: e.name, group: e.group, term: e.term }));
+    const back = parseDefinitions(serializeDefinitions(items)).entries;
+    const sameEntry = (e, i) => e.name === items[i].name && e.group === items[i].group && same(e.term, items[i].term);
+    return (back.length === items.length && back.every(sameEntry)) || 'mismatch';
+  });
+  check('saving FOO = SUCC FOO keeps the old FOO (no cycle)', () => {
+    const env2 = makeEnv(new Map([...env.defs, ['FOO', P('2')]]));
+    return print(inlineReaching(P('SUCC FOO'), 'FOO', env2)) === 'SUCC 2';
+  });
+
+  for (const r of results) log(`${r.ok ? '✓' : '✗'} ${r.name}${r.detail ? ` — ${r.detail}` : ''}`);
+  const passed = results.filter(r => r.ok).length;
+  log(`${passed}/${results.length} tests passed`);
+  return { passed, failed: results.length - passed, results };
+}
+
+return Object.freeze({
+  STEP_LIMIT, MAX_TERM_SIZE, MAX_DEPTH, MAX_NUMERAL, ALIAS_NUMERALS, DEFAULTS,
+  Var, Lam, App, isRefName, isRef, isValidName, isNumeralName, LambdaSyntaxError,
+  parse, print, parenAsFn, parenAsArg,
+  freeVariables, occursFree, refsOf, fresh, subst, mapRefs, substRef,
+  subtermAt, replaceAt, measure,
+  makeEnv, lookup, churchNumeral, findRedex, step, normalize,
+  toDeBruijn, alphaEq, aliasIndex, aliasesOf,
+  parseDefinitions, checkDefinitions, serializeDefinitions, cleanGroup, inlineReaching, defaultEntries,
+  runTests,
+});
+})();
+globalThis.runTests = Lambda.runTests;   // so `runTests()` works from the console
+</script>
+<script id="lambda-ui">
+/* ════════════════════════════════════════════════════════════════════════
+   UI
+   Everything that touches the DOM lives here and calls the pure core above.
+   Each user action is defined once in the action registry (section 5);
+   buttons, keys, menus and the command palette call actions by id.
+   ════════════════════════════════════════════════════════════════════════ */
+(() => {
+'use strict';
+const L = Lambda;
+
+/* ── 1. Helpers ────────────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+function h(tag, attrs, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'dataset') Object.assign(el.dataset, v);
+    else el.setAttribute(k, v === true ? '' : String(v));
+  }
+  for (const c of children.flat(Infinity)) if (c != null && c !== false && c !== '') el.append(c);
+  return el;
+}
+const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '');
+const TEXT_TYPES = new Set(['text', 'search', 'number', 'email', 'url', 'password', 'tel']);
+const isTyping = el => !!el && (el.tagName === 'TEXTAREA' || el.isContentEditable ||
+  (el.tagName === 'INPUT' && TEXT_TYPES.has(el.type)));
+const blurTyping = () => { if (isTyping(document.activeElement)) document.activeElement.blur(); };
+function download(filename, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }));
+  const a = h('a', { href: url, download: filename });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/* ── 2. Constants ──────────────────────────────────────────────────────── */
+const STORE_KEY = 'lambda-workbench';
+const STORE_VERSION = 1;
+const MIGRATIONS = {};            // MIGRATIONS[n](data) upgrades version n to n + 1; version 1 is the first
+const SAVED_GROUP = 'Saved';
+const MAX_STEP_LIMIT = 10000;
+const MAX_HISTORY_ROWS = 400;
+const EXAMPLES = ['PLUS 2 3', 'AND (NOT TRUE) FALSE', '(λx.λy.x) y', 'K I OMEGA', 'ISZERO (PRED 1)'];
+const THEMES = [
+  { id: 'dark', label: 'Dark' },
+  { id: 'tokyo', label: 'Tokyo Night' },
+  { id: 'monokai', label: 'Monokai' },
+  { id: 'gruvbox', label: 'Gruvbox' },
+  { id: 'gruvbox-light', label: 'Gruvbox Soft Light' },
+];
+const systemTheme = () => (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'gruvbox-light' : 'dark');
+const defaultSettings = () => ({ theme: systemTheme(), stepLimit: L.STEP_LIMIT });
+
+// Default bindings, action id → key combos. Escape is fixed: it closes the
+// topmost panel, stops a running Eval, leaves a text field, or clears the selection.
+const DEFAULT_KEYMAP = Object.freeze({
+  step: ['Space'], undo: ['Backspace'], eval: ['Enter'], clear: ['Shift+Backspace'],
+  'sel.parent': ['ArrowUp'], 'sel.child': ['ArrowDown'], 'sel.prev': ['ArrowLeft'], 'sel.next': ['ArrowRight'],
+  'mode.replace': ['R'], 'mode.apply': ['A'], 'mode.wrap': ['W'], 'sel.remove': ['Delete'],
+  'term.focus': ['/'], 'term.edit': ['E'], 'save.focus': ['S'], 'change.undo': ['Mod+Z'],
+  palette: ['Mod+K'], help: ['?'], settings: [','], 'theme.next': ['T'],
+});
+const GROUP_ORDER = ['Reduction', 'Selection', 'Editing', 'Favorites', 'App', 'Data'];
+
+/* ── 3. State ──────────────────────────────────────────────────────────── */
+const state = {
+  favorites: [],        // [{ name, group, term }] in display order
+  env: null,            // core environment built from the favorites
+  aliases: null,        // alias index for the favorites
+  aliasStamp: 0,
+  history: [],          // the current run: [{ term, label }]; history[0] is where it started
+  editUndo: [],         // { history, sel } snapshots taken before each edit
+  changes: [],          // undo stack for favorites and data changes: { label, restore }
+  sel: null,            // { path, mode: 'replace' | 'apply' | 'wrap' }
+  note: null,           // inline note about the last Eval: { kind, text, limit }
+  run: null,            // Eval in progress
+  settings: defaultSettings(),
+  keymap: {},           // overrides of DEFAULT_KEYMAP
+  recent: [],           // command palette: recently used item keys
+};
+let view = null;              // rendered expression: { root, nodes, redex }
+let capture = null;           // shortcuts pane: action id waiting for new keys
+let pendingRestore = null;    // backup that was read and awaits Replace / Merge
+let flashName = null;         // favorite to highlight once after saving
+
+const current = () => (state.history.length ? state.history[state.history.length - 1].term : null);
+const hasTerm = () => state.history.length > 0;
+const hasSel = () => !!state.sel && hasTerm();
+
+/* ── 4. Persistence: one versioned record in localStorage ─────────────── */
+function migrate(data) {
+  if (!data || typeof data !== 'object') return null;
+  let version = data.version;
+  if (!Number.isInteger(version) || version < 1 || version > STORE_VERSION) return null;
+  while (version < STORE_VERSION) data = MIGRATIONS[version++](data);
+  return data;
+}
+let storageFailed = false;     // set when localStorage is blocked or full
+function readStore() {
+  let raw = null;
+  try { raw = localStorage.getItem(STORE_KEY); } catch { storageFailed = true; return null; }   // blocked
+  try { return raw ? migrate(JSON.parse(raw)) : null; } catch { return null; }                 // corrupt
+}
+function writeStore() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(snapshotData()));
+    if (storageFailed) { storageFailed = false; renderFooter(); }
+  } catch {
+    if (!storageFailed) {
+      storageFailed = true;
+      renderFooter();
+      status('This browser is not letting the page store data, so changes last until you reload. Export or back up to keep them.', 'warn');
+    }
+  }
+}
+function snapshotData() {
+  return {
+    version: STORE_VERSION,
+    favorites: L.serializeDefinitions(state.favorites, { header: false }),
+    settings: { ...state.settings },
+    keymap: JSON.parse(JSON.stringify(state.keymap)),
+    recent: state.recent.slice(),
+    run: state.history.length ? { start: L.print(state.history[0].term), steps: state.history.length - 1 } : null,
+  };
+}
+function sanitizeSettings(s) {
+  const out = defaultSettings();
+  if (s && THEMES.some(t => t.id === s.theme)) out.theme = s.theme;
+  if (s && Number.isInteger(s.stepLimit) && s.stepLimit >= 1 && s.stepLimit <= MAX_STEP_LIMIT) out.stepLimit = s.stepLimit;
+  return out;
+}
+function sanitizeKeymap(k) {
+  const out = {};
+  if (k && typeof k === 'object') {
+    for (const [id, combos] of Object.entries(k)) {
+      if (actions.has(id) && Array.isArray(combos)) out[id] = combos.filter(c => typeof c === 'string' && c.length < 40).slice(0, 3);
+    }
+  }
+  return out;
+}
+function favoritesFromText(text) {
+  const { entries } = L.parseDefinitions(text);
+  return L.checkDefinitions(entries).accepted.map(e => ({ name: e.name, group: e.group || SAVED_GROUP, term: e.term }));
+}
+const defaultFavorites = () => L.defaultEntries().map(e => ({ name: e.name, group: e.group, term: e.term }));
+
+function applyData(data) {
+  data = data || {};
+  state.favorites = typeof data.favorites === 'string' ? favoritesFromText(data.favorites) : defaultFavorites();
+  state.settings = sanitizeSettings(data.settings);
+  state.keymap = sanitizeKeymap(data.keymap);
+  state.recent = Array.isArray(data.recent) ? data.recent.filter(k => typeof k === 'string').slice(0, 8) : [];
+  rebuildEnv();
+  state.history = replayRun(data.run);
+  state.editUndo = [];
+  state.sel = null;
+  state.note = null;
+}
+// The run is stored as its start term and step count; reduction is
+// deterministic, so the steps are recomputed (within a time budget).
+function replayRun(run) {
+  if (!run || typeof run.start !== 'string') return [];
+  let t;
+  try { t = L.parse(run.start); } catch { return []; }
+  if (checkTermForUse(t)) return [];
+  const history = [{ term: t, label: '' }];
+  const steps = Number.isInteger(run.steps) ? Math.min(run.steps, MAX_STEP_LIMIT) : 0;
+  const t0 = performance.now();
+  for (let i = 0; i < steps && performance.now() - t0 < 300; i++) {
+    const r = L.step(t, state.env);
+    if (!r || tooBig(L.measure(r.term))) break;
+    t = r.term;
+    history.push({ term: t, label: stepLabel(r.redex) });
+  }
+  return history;
+}
+
+/* ── 5. Action registry ────────────────────────────────────────────────── */
+const actions = new Map();
+function defineAction(id, label, group, run, { enabled = () => true, palette = true } = {}) {
+  actions.set(id, { id, label, group, run, enabled, palette });
+}
+function runAction(id, arg) {
+  const a = actions.get(id);
+  if (!a || !a.enabled()) return false;
+  try { a.run(arg); } catch (e) { reportError(e); }
+  return true;
+}
+function reportError(e) {
+  console.error(e);
+  status(e instanceof RangeError ? 'That term is nested too deeply to handle here.' : `Something went wrong: ${e.message}`, 'error');
+}
+
+function registerActions() {
+  const A = defineAction;
+  A('step', 'Reduce one step', 'Reduction', doStep);
+  A('undo', 'Undo: step back, or undo the last edit', 'Reduction', doUndo);
+  A('eval', 'Evaluate to normal form (press again to stop)', 'Reduction', doEval);
+  A('clear', 'Clear the expression', 'Reduction', clearExpression);
+
+  A('sel.parent', 'Select the enclosing subterm', 'Selection', () => navigate('up'), { enabled: hasTerm });
+  A('sel.child', 'Select the first inner subterm', 'Selection', () => navigate('down'), { enabled: hasTerm });
+  A('sel.prev', 'Select the previous name', 'Selection', () => navigate('left'), { enabled: hasTerm });
+  A('sel.next', 'Select the next name', 'Selection', () => navigate('right'), { enabled: hasTerm });
+  A('sel.clear', 'Clear the selection', 'Selection', clearSelection, { enabled: hasSel });
+  A('mode.replace', 'Favorite click replaces the selection', 'Selection', () => setMode('replace'), { enabled: hasSel });
+  A('mode.apply', 'Favorite click applies the selection to it (S F)', 'Selection', () => setMode('apply'), { enabled: hasSel });
+  A('mode.wrap', 'Favorite click is applied to the selection (F S)', 'Selection', () => setMode('wrap'), { enabled: hasSel });
+  A('sel.remove', 'Remove the selected subterm', 'Selection', removeSelection, { enabled: hasSel });
+  A('sel.pick', 'Select a subterm', 'Selection', pickNode, { palette: false });
+
+  A('term.focus', 'Type a term', 'Editing', () => $('term-input').focus());
+  A('term.edit', 'Edit the expression as text', 'Editing', editAsText, { enabled: hasTerm });
+  A('example', 'Load an example', 'Editing', loadExample, { palette: false });
+  A('history.rewind', 'Go back to a step', 'Editing', rewind, { palette: false });
+
+  A('save.focus', 'Save the expression as a favorite', 'Favorites', () => { const el = $('save-name'); el.focus(); el.select(); });
+  A('save', 'Save', 'Favorites', saveFavorite, { palette: false });
+  A('fav.insert', 'Insert a favorite', 'Favorites', insertFavorite, { palette: false });
+  A('fav.delete', 'Delete a favorite', 'Favorites', deleteFavorite, { palette: false });
+  A('fav.export', 'Export favorites (.txt)', 'Favorites', exportFavorites);
+  A('fav.import', 'Import favorites (.txt)…', 'Favorites', () => $('file-defs').click());
+  A('fav.defaults', 'Restore the default favorites', 'Favorites', restoreDefaults);
+  A('change.undo', 'Undo the last favorites or data change', 'Favorites', undoChange);
+  A('report.close', 'Dismiss the import report', 'Favorites', () => { $('fav-report').hidden = true; }, { palette: false });
+
+  A('palette', 'Command palette', 'App', () => togglePanel('palette'));
+  A('help', 'Keyboard shortcuts', 'App', () => togglePanel('help'));
+  A('settings', 'Settings', 'App', () => togglePanel('settings'));
+  A('settings.limit', 'Change the step limit', 'App', focusLimit);
+  A('theme.next', 'Next theme', 'App', nextTheme);
+  A('theme.set', 'Set the theme', 'App', setTheme, { palette: false });
+  A('panel.close', 'Close the panel', 'App', closeTopPanel, { palette: false });
+  A('toast.dismiss', 'Dismiss a notification', 'App', id => { const t = document.getElementById(id); if (t) t.remove(); }, { palette: false });
+  A('keys.capture', 'Rebind a shortcut', 'App', startCapture, { palette: false });
+  A('keys.unbind', 'Remove a shortcut', 'App', unbindKey, { palette: false });
+  A('keys.reset', 'Reset shortcuts', 'App', resetKeys);
+  A('tests', 'Run the self-tests', 'App', runSelfTests);
+
+  A('data.backup', 'Back up all data (.json)', 'Data', backupData);
+  A('data.restore', 'Restore from a backup (.json)…', 'Data', () => { openPanel('settings'); $('file-backup').click(); });
+  A('data.restore.replace', 'Replace everything with the backup', 'Data', () => applyRestore('replace'), { palette: false });
+  A('data.restore.merge', 'Merge favorites from the backup', 'Data', () => applyRestore('merge'), { palette: false });
+  A('data.restore.cancel', 'Cancel the restore', 'Data', () => { pendingRestore = null; hideInline('restore-choice'); }, { palette: false });
+  A('data.clear', 'Clear all data…', 'Data', () => { openPanel('settings'); askClearData(); });
+  A('data.clear.confirm', 'Erase all data', 'Data', clearAllData, { palette: false });
+  A('data.clear.cancel', 'Cancel clearing', 'Data', () => hideInline('clear-choice'), { palette: false });
+  A('settings.reset', 'Reset settings', 'Data', resetSettings);
+}
+
+/* ── 6. Derived data: environment and aliases ──────────────────────────── */
+function rebuildEnv() {
+  state.env = L.makeEnv(new Map(state.favorites.map(f => [f.name, f.term])));
+  state.aliases = L.aliasIndex(state.env, state.favorites.map(f => f.name));
+  state.aliasStamp++;
+}
+function aliasesFor(entry) {
+  if (entry.aliasStamp !== state.aliasStamp) {
+    let names = [];
+    try { names = L.aliasesOf(entry.term, state.aliases, state.env); } catch { names = []; }
+    entry.alias = names;
+    entry.aliasStamp = state.aliasStamp;
+  }
+  return entry.alias;
+}
+const printed = entry => entry.text || (entry.text = L.print(entry.term));
+const tooBig = m => m.size > L.MAX_TERM_SIZE || m.depth > L.MAX_DEPTH;
+const tooBigText = m => (m.size > L.MAX_TERM_SIZE
+  ? `the term would grow past ${L.MAX_TERM_SIZE} nodes`
+  : `the term would nest deeper than ${L.MAX_DEPTH} levels`);
+
+// Is a parsed term usable as (part of) the expression? Returns a problem or null.
+function checkTermForUse(t) {
+  const unknown = [...L.refsOf(t)].find(n => !L.lookup(state.env, n));
+  if (unknown) {
+    if (L.isNumeralName(unknown)) return `${unknown} is too large: digits up to ${L.MAX_NUMERAL} are numerals`;
+    return `unknown name ${unknown}${/[a-z]/.test(unknown) ? ' (saved names are UPPERCASE)' : ''}`;
+  }
+  const m = L.measure(t);
+  if (m.size > L.MAX_TERM_SIZE) return `the term is too large (${m.size} nodes; the limit is ${L.MAX_TERM_SIZE})`;
+  if (m.depth > L.MAX_DEPTH) return `the term nests too deeply (${m.depth} levels; the limit is ${L.MAX_DEPTH})`;
+  return null;
+}
+
+/* ── 7. Building the expression ────────────────────────────────────────── */
+// Every edit starts a new run; the previous state goes on the edit-undo stack.
+function commitEdit(term, sel = null) {
+  stopRun();
+  state.editUndo.push({ history: state.history, sel: state.sel });
+  if (state.editUndo.length > 300) state.editUndo.shift();
+  state.history = term ? [{ term, label: '' }] : [];
+  state.sel = sel;
+  state.note = null;
+  dismissToasts(true);
+  renderTerm();
+  writeStore();
+}
+
+// Where a favorite (or typed term) goes:
+//   empty expression → it becomes the expression
+//   no selection     → the expression is applied to it:  E F
+//   selection S      → replace: F · apply: S F · wrap: F S
+function insertTerm(t, { setIfUnselected = false } = {}) {
+  const cur = current(), sel = state.sel;
+  if (!cur || (setIfUnselected && !sel)) return commitEdit(t);
+  const target = sel && L.subtermAt(cur, sel.path);
+  if (!target) return commitEdit(L.App(cur, t));
+  const next = sel.mode === 'replace' ? t : sel.mode === 'apply' ? L.App(target, t) : L.App(t, target);
+  // After a wrap, further clicks add arguments to the new application.
+  commitEdit(L.replaceAt(cur, sel.path, next), { path: sel.path, mode: sel.mode === 'wrap' ? 'apply' : sel.mode });
+}
+function insertFavorite(name) {
+  if (!state.favorites.some(f => f.name === name)) return;
+  blurTyping();
+  showPreview(null);
+  insertTerm(L.Var(name));
+}
+function submitTerm() {
+  const input = $('term-input');
+  const src = input.value.trim();
+  if (!src) return termMsg('Type a term first, e.g. PLUS 2 3 or λx.x x', 'info');
+  let t;
+  try { t = L.parse(src); } catch (e) { return termMsg(e.message, 'error'); }
+  const problem = checkTermForUse(t);
+  if (problem) return termMsg(problem[0].toUpperCase() + problem.slice(1), 'error');
+  insertTerm(t, { setIfUnselected: true });
+  input.value = '';
+  termMsg('');
+  input.blur();
+}
+function editAsText() {
+  const t = current();
+  if (!t) return;
+  clearSelection();
+  const input = $('term-input');
+  input.value = L.print(t);
+  input.focus();
+  input.select();
+  termMsg('Edit, then press Enter to replace the expression (Esc leaves the field).', 'info');
+}
+function loadExample(src) {
+  let t;
+  try { t = L.parse(src); } catch (e) { return status(e.message, 'error'); }
+  const problem = checkTermForUse(t);
+  if (problem) return status(`Can't load ${src}: ${problem}.`, 'error');
+  commitEdit(t);
+}
+// Remove the selected subterm: an argument or function disappears from its
+// application; inside a λ the whole λ goes; the root clears the expression.
+function removeSelection() {
+  const cur = current();
+  if (!cur || !state.sel) return;
+  let path = state.sel.path;
+  while (path.endsWith('b')) path = path.slice(0, -1);
+  if (!path) return clearExpression();
+  const parentPath = path.slice(0, -1);
+  const parent = L.subtermAt(cur, parentPath);
+  commitEdit(L.replaceAt(cur, parentPath, path.endsWith('f') ? parent.arg : parent.fn), null);
+}
+function clearExpression() {
+  if (!hasTerm()) return status('The expression is already empty.');
+  commitEdit(null);
+  toast('Expression cleared', { undoAction: 'undo', transient: true });
+}
+
+// Selection
+function selectPath(path, mode = 'replace') { state.sel = { path, mode }; applySelection(); }
+function clearSelection() { if (state.sel) { state.sel = null; applySelection(); } }
+function setMode(mode) { if (state.sel) { state.sel = { ...state.sel, mode }; applySelection(); } }
+// Click a subterm to select it; click the selection again to widen it to its parent.
+function pickNode(id) {
+  if (!view || !view.nodes[id]) return;
+  const selected = state.sel ? idOfPath(state.sel.path) : null;
+  if (selected !== id) return selectPath(pathOf(id), 'replace');
+  const parent = view.nodes[id].parent;
+  if (parent >= 0) selectPath(pathOf(parent), state.sel.mode);
+  else clearSelection();
+}
+// Arrow keys: ↑ enclosing subterm, ↓ first inner one, ←/→ previous/next name.
+function navigate(dir) {
+  if (!view) return;
+  const nodes = view.nodes;
+  const isAtom = k => nodes[k].term.type === 'var';
+  if (!state.sel) {
+    let id = 0;
+    if (dir === 'left') for (let k = nodes.length - 1; k >= 0; k--) { if (isAtom(k)) { id = k; break; } }
+    if (dir === 'right') id = nodes.findIndex((n, k) => isAtom(k));
+    return selectPath(pathOf(id), 'replace');
+  }
+  const id = idOfPath(state.sel.path);
+  if (id == null) return clearSelection();
+  const n = nodes[id];
+  let next = null;
+  if (dir === 'up') next = n.parent >= 0 ? n.parent : null;
+  else if (dir === 'down') next = n.term.type === 'var' ? null : id + 1;
+  else if (dir === 'left') { for (let k = id - 1; k >= 0; k--) if (isAtom(k)) { next = k; break; } }
+  else if (dir === 'right') { for (let k = n.end + 1; k < nodes.length; k++) if (isAtom(k)) { next = k; break; } }
+  if (next != null) selectPath(pathOf(next), state.sel.mode);
+}
+// Node ids are assigned in reading order; paths are recovered from parents.
+function idOfPath(path) {
+  if (!view) return null;
+  let id = 0;
+  for (const step of path) {
+    const n = view.nodes[id];
+    if (!n) return null;
+    if (step === 'a' && n.term.type === 'app') id = view.nodes[id + 1].end + 1;
+    else if ((step === 'f' && n.term.type === 'app') || (step === 'b' && n.term.type === 'lam')) id += 1;
+    else return null;
+  }
+  return view.nodes[id] ? id : null;
+}
+function pathOf(id) {
+  const steps = [];
+  for (let n = view.nodes[id]; n.parent >= 0; n = view.nodes[n.parent]) steps.push(n.step);
+  return steps.reverse().join('');
+}
+
+/* ── 8. Reduction ──────────────────────────────────────────────────────── */
+const stepLabel = rx => (rx.kind === 'beta' ? 'β' : `expand ${rx.name}`);
+
+function doStep() {
+  stopRun();
+  const t = current();
+  if (!t) return status('Nothing to reduce yet. Click a favorite or type a term.');
+  const r = L.step(t, state.env);
+  if (!r) return status('Already in normal form.', 'ok');
+  const m = L.measure(r.term);
+  if (tooBig(m)) return status(`Can't take the next step: ${tooBigText(m)}.`, 'warn');
+  state.history = [...state.history, { term: r.term, label: stepLabel(r.redex) }];
+  state.sel = null;
+  state.note = null;
+  renderTerm();
+  writeStore();
+}
+// Backspace: step back while the run has steps; then undo edits one by one.
+function doUndo() {
+  stopRun();
+  if (state.history.length > 1) {
+    state.history = state.history.slice(0, -1);
+    state.sel = null;
+  } else if (state.editUndo.length) {
+    const s = state.editUndo.pop();
+    state.history = s.history;
+    state.sel = s.sel;
+  } else return status('Nothing to undo.');
+  state.note = null;
+  dismissToasts(true);
+  renderTerm();
+  writeStore();
+}
+// Eval runs in slices of ~14 ms so the page stays responsive, and stops at
+// normal form, at the step limit, when the term grows too large, or on Esc.
+function doEval() {
+  if (state.run) return stopRun();
+  const start = current();
+  if (!start) return status('Nothing to evaluate yet. Click a favorite or type a term.');
+  const limit = state.settings.stepLimit;
+  const run = { term: start, steps: 0 };
+  let lastPaint = performance.now(), progressShown = false;
+  run.finish = (reason, info) => {
+    if (state.run !== run) return;
+    state.run = null;
+    setRunning(false);
+    const n = run.steps, s = n === 1 ? '' : 's';
+    const total = state.history.length - 1;
+    state.note =
+      reason === 'normal' ? { kind: 'ok', text: n ? `normal form after ${plural(total, 'step')}` : 'already in normal form' }
+      : reason === 'limit' ? { kind: 'warn', text: `stopped after ${n} step${s}`, limit: true }
+      : reason === 'size' ? { kind: 'warn', text: `stopped after ${n} step${s}: ${tooBigText(info)}` }
+      : reason === 'cancel' ? { kind: 'warn', text: `stopped by you after ${n} step${s}` }
+      : { kind: 'error', text: `stopped after ${n} step${s}: ${info}` };
+    if (progressShown) status('');
+    renderTerm();
+    writeStore();
+  };
+  const tick = () => {
+    if (state.run !== run) return;
+    const t0 = performance.now();
+    try {
+      do {
+        const r = L.step(run.term, state.env);
+        if (!r) return run.finish('normal');
+        if (run.steps >= limit) return run.finish('limit');
+        const m = L.measure(r.term);
+        if (tooBig(m)) return run.finish('size', m);
+        run.term = r.term;
+        run.steps++;
+        state.history.push({ term: r.term, label: stepLabel(r.redex) });
+      } while (performance.now() - t0 < 14);
+    } catch (e) {
+      return run.finish('error', e instanceof RangeError ? 'the term nests too deeply' : e.message);
+    }
+    if (performance.now() - lastPaint > 150) {
+      lastPaint = performance.now();
+      progressShown = true;
+      status(`Evaluating… ${plural(run.steps, 'step')} so far. Esc stops.`);
+      renderHistory();
+    }
+    setTimeout(tick, 0);
+  };
+  state.history = state.history.slice();   // the run appends to its own copy
+  state.run = run;
+  state.sel = null;
+  state.note = null;
+  setRunning(true);
+  tick();
+}
+function stopRun() { if (state.run) state.run.finish('cancel'); }
+function setRunning(on) {
+  document.body.classList.toggle('running', on);
+  $('eval-label').textContent = on ? 'Stop' : 'Eval';
+}
+function rewind(i) {
+  i = Number(i);
+  stopRun();
+  if (!Number.isInteger(i) || i < 0 || i >= state.history.length - 1) return;
+  state.history = state.history.slice(0, i + 1);
+  state.sel = null;
+  state.note = null;
+  renderTerm();
+  writeStore();
+  status(`Back at step ${i}. Step or Eval carries on from here.`);
+}
+
+/* ── 9. Favorites ──────────────────────────────────────────────────────── */
+function pushChange(label, restore) {
+  state.changes.push({ label, restore });
+  if (state.changes.length > 50) state.changes.shift();
+}
+function favoritesSnapshot() {
+  const favorites = state.favorites.slice();
+  return () => { state.favorites = favorites; favoritesChanged(); };
+}
+function favoritesChanged() {
+  rebuildEnv();
+  renderFavorites();
+  renderTerm(true);
+  updateSaveButton();
+  writeStore();
+}
+function saveFavorite() {
+  const input = $('save-name');
+  const name = input.value.trim().toUpperCase();
+  const t = current();
+  if (!t) return status('Nothing to save yet. Build or type a term first.', 'error');
+  if (!name) { input.focus(); return status('Type a name for the current term, then Save.', 'info'); }
+  if (!L.isValidName(name)) return status('A name is UPPERCASE letters, digits and _, starting with a letter (or only digits).', 'error');
+  const free = L.freeVariables(t);
+  if (free.length) {
+    return status(`Can't save: ${free.join(', ')} ${free.length === 1 ? 'is' : 'are'} free. Favorites must be closed terms.`, 'error');
+  }
+  const term = L.inlineReaching(t, name, state.env);     // FOO = SUCC FOO keeps the old FOO inside
+  const { errors } = L.checkDefinitions([{ name, term, group: SAVED_GROUP, line: 0 }], state.env.defs);
+  if (errors.length) return status(`Can't save: ${errors[0].message}.`, 'error');
+  const existing = state.favorites.find(f => f.name === name);
+  pushChange(existing ? `replace ${name}` : `save ${name}`, favoritesSnapshot());
+  state.favorites = existing
+    ? state.favorites.map(f => (f === existing ? { ...f, term } : f))
+    : [...state.favorites, { name, group: SAVED_GROUP, term }];
+  flashName = name;
+  input.value = '';
+  favoritesChanged();
+  flashName = null;
+  blurTyping();
+  if (existing) toast(`Replaced ${name}`, { undoAction: 'change.undo' });
+  else status(`Saved ${name} under ${SAVED_GROUP}.`, 'ok');
+}
+// Deleting a name other favorites (or the current run) still use inlines its
+// definition there first, so nothing is left pointing at a missing name.
+function deleteFavorite(name) {
+  const fav = state.favorites.find(f => f.name === name);
+  if (!fav) return;
+  showPreview(null);
+  const restore = favoritesSnapshot();
+  const fallback = L.isNumeralName(name) && Number(name) <= L.MAX_NUMERAL ? L.churchNumeral(Number(name)) : null;
+  let favorites = state.favorites.filter(f => f !== fav);
+  const inlinedInto = [];
+  if (!(fallback && L.alphaEq(fav.term, fallback))) {
+    const inline = t => L.substRef(t, name, fav.term);
+    favorites = favorites.map(f => {
+      const t = inline(f.term);
+      if (t === f.term) return f;
+      inlinedInto.push(f.name);
+      return { ...f, term: t };
+    });
+    const fixRun = run => run.map(e => { const t = inline(e.term); return t === e.term ? e : { term: t, label: e.label }; });
+    if (state.history.some(e => L.refsOf(e.term).has(name))) inlinedInto.push('the expression');
+    state.history = fixRun(state.history);
+    state.editUndo = state.editUndo.map(s => ({ history: fixRun(s.history), sel: s.sel }));
+  }
+  pushChange(`delete ${name}`, restore);
+  state.favorites = favorites;
+  favoritesChanged();
+  toast(`Deleted ${name}${inlinedInto.length ? ` (inlined into ${clip(inlinedInto.join(', '), 60)})` : ''}`, { undoAction: 'change.undo' });
+}
+function exportFavorites() {
+  download('lambda-favorites.txt', L.serializeDefinitions(state.favorites), 'text/plain');
+  status(`Exported ${plural(state.favorites.length, 'favorite')} to lambda-favorites.txt.`, 'ok');
+}
+async function importFavorites(file) {
+  let text;
+  try { text = await file.text(); } catch { return showReport(file.name, { message: `Couldn't read ${file.name}.` }); }
+  const parsed = L.parseDefinitions(text);
+  const checked = L.checkDefinitions(parsed.entries, state.env.defs);
+  const errors = [...parsed.errors, ...checked.errors].sort((a, b) => a.line - b.line);
+  let added = 0, replaced = 0;
+  if (checked.accepted.length) {
+    pushChange(`import ${file.name}`, favoritesSnapshot());
+    const incoming = checked.accepted.map(e => {
+      const old = state.favorites.find(f => f.name === e.name);
+      if (old) replaced++; else added++;
+      return { name: e.name, group: e.group || (old ? old.group : SAVED_GROUP), term: e.term };
+    });
+    state.favorites = mergeFavorites(state.favorites, incoming);
+    favoritesChanged();
+    toast(`Imported ${plural(checked.accepted.length, 'definition')}`, { undoAction: 'change.undo' });
+  }
+  showReport(file.name, { added, replaced, errors });
+}
+// Incoming favorites replace same-named ones in place; one that changes group
+// moves to the end of the list so the existing groups keep their order.
+function mergeFavorites(list, incoming) {
+  let out = list.slice();
+  for (const f of incoming) {
+    const i = out.findIndex(x => x.name === f.name);
+    if (i >= 0 && out[i].group === f.group) out[i] = f;
+    else { if (i >= 0) out = out.filter((_, k) => k !== i); out.push(f); }
+  }
+  return out;
+}
+function showReport(fileName, { added = 0, replaced = 0, errors = [], message = null }) {
+  const box = $('fav-report');
+  box.textContent = '';
+  box.className = `report${errors.length || message ? ' bad' : ''}`;
+  const total = added + replaced;
+  box.append(h('p', {}, message || (total
+    ? `Imported ${plural(total, 'definition')} from ${fileName}${replaced ? ` (${added} new, ${replaced} replaced)` : ''}.`
+    : `Nothing was imported from ${fileName}.`)));
+  if (errors.length) {
+    box.append(h('p', {}, h('b', {}, `Skipped ${plural(errors.length, 'line')}:`)),
+      h('ul', {}, errors.slice(0, 60).map(e => h('li', {}, `line ${e.line}: ${e.message}`))));
+    if (errors.length > 60) box.append(h('p', { class: 'hint' }, `…and ${errors.length - 60} more.`));
+  }
+  box.append(h('button', { type: 'button', class: 'toast-x', 'data-action': 'report.close', 'aria-label': 'Dismiss the report' }, '×'));
+  box.hidden = false;
+}
+function restoreDefaults() {
+  const defaults = defaultFavorites();
+  const names = new Set(defaults.map(d => d.name));
+  const intact = defaults.every(d => {
+    const f = state.favorites.find(x => x.name === d.name);
+    return f && f.group === d.group && L.alphaEq(f.term, d.term);
+  });
+  if (intact) return status('All the default favorites are already there.', 'ok');
+  pushChange('restore defaults', favoritesSnapshot());
+  state.favorites = [...defaults, ...state.favorites.filter(f => !names.has(f.name))];
+  favoritesChanged();
+  toast('Restored the default favorites', { undoAction: 'change.undo' });
+}
+function undoChange() {
+  const change = state.changes.pop();
+  if (!change) return status('No favorites or data change to undo.');
+  change.restore();
+  dismissToasts();
+  status(`Undid: ${change.label}.`, 'ok');
+}
+
+/* ── 10. Rendering ─────────────────────────────────────────────────────── */
+function renderAll() {
+  renderFavorites();
+  renderTerm(true);
+  renderKeyHints();
+  renderFooter();
+  updateSaveButton();
+}
+function renderTerm(fullHistory = false) {
+  renderExpr();
+  renderHistory(fullHistory);
+}
+
+function renderFavorites() {
+  const box = $('fav-list');
+  box.textContent = '';
+  const groups = [];
+  for (const f of state.favorites) if (!groups.includes(f.group)) groups.push(f.group);
+  if (!groups.length) {
+    box.append(h('p', { class: 'hint', style: 'padding: 0 .9rem' }, 'No favorites. Save one, import a file, or restore the defaults.'));
+  }
+  for (const g of groups) {
+    const members = state.favorites.filter(f => f.group === g);
+    const ul = h('ul', { class: 'fav-ul', style: `--w: ${Math.max(...members.map(f => f.name.length))}ch` });
+    for (const f of members) {
+      const def = L.print(f.term);
+      ul.append(h('li', { class: `fav${f.name === flashName ? ' flash' : ''}` },
+        h('button', {
+          type: 'button', class: 'fav-btn', 'data-action': 'fav.insert', 'data-arg': f.name, title: `${f.name} = ${clip(def, 400)}`,
+        }, h('span', { class: 'fav-name' }, f.name), h('span', { class: 'fav-def' }, def)),
+        h('button', {
+          type: 'button', class: 'fav-del', 'data-action': 'fav.delete', 'data-arg': f.name,
+          'aria-label': `Delete ${f.name}`, title: `Delete ${f.name}`,
+        }, '×')));
+    }
+    box.append(h('section', { class: 'fav-group' }, h('h3', {}, g), ul));
+  }
+}
+
+// The expression is drawn as nested spans, one per subterm, so every subterm
+// can be hovered and clicked. Parentheses follow the core's printer rules.
+function buildView(term, redex) {
+  const nodes = [];
+  const rx = redex ? redex.path : null;
+  const scopes = new Map();     // variable name → stack of λ node ids
+  let firingLam = -1;
+  const paren = s => h('span', { class: 'paren' }, s);
+  function walk(t, parent, step, depth, onRx, parens) {
+    const id = nodes.length;
+    const info = { term: t, parent, step, el: null, end: id };
+    nodes.push(info);
+    const el = document.createElement('span');
+    el.className = `tm tm-${t.type}`;
+    el.dataset.id = id;
+    info.el = el;
+    const here = onRx && depth === rx.length;
+    if (parens) el.append(paren('('));
+    if (t.type === 'var') {
+      el.append(t.name);
+      if (L.isRefName(t.name)) {
+        el.classList.add('ref');
+        if (here) el.classList.add('rx-delta');
+      } else {
+        const stack = scopes.get(t.name);
+        if (stack && stack.length) el.dataset.b = stack[stack.length - 1];
+        else el.classList.add('free');
+      }
+    } else if (t.type === 'lam') {
+      el.append(h('span', { class: 'lam-head' }, 'λ', h('span', { class: 'param', 'data-b': id }, t.param), '.'));
+      let stack = scopes.get(t.param);
+      if (!stack) scopes.set(t.param, (stack = []));
+      stack.push(id);
+      el.append(walk(t.body, id, 'b', depth + 1, onRx && rx[depth] === 'b', false));
+      stack.pop();
+    } else {
+      const fnEl = walk(t.fn, id, 'f', depth + 1, onRx && rx[depth] === 'f', L.parenAsFn(t.fn));
+      const argEl = walk(t.arg, id, 'a', depth + 1, onRx && rx[depth] === 'a', L.parenAsArg(t.arg));
+      el.append(fnEl, h('span', { class: 'gap' }, ' '), argEl);
+      if (here && redex.kind === 'beta') {
+        fnEl.classList.add('rx-fn');
+        argEl.classList.add('rx-arg');
+        firingLam = id + 1;
+      }
+    }
+    if (parens) el.append(paren(')'));
+    info.end = nodes.length - 1;
+    return el;
+  }
+  const root = walk(term, -1, '', 0, rx !== null, false);
+  if (firingLam >= 0) root.querySelectorAll(`[data-b="${firingLam}"]`).forEach(el => el.classList.add('rx-var'));
+  return { root, nodes, redex };
+}
+
+let hoverEl = null, binderShown = null, previewName = null;
+function renderExpr() {
+  const box = $('expr');
+  box.textContent = '';
+  view = null;
+  hoverEl = null;
+  binderShown = null;
+  previewName = null;
+  const t = current();
+  if (!t) box.append(emptyState());
+  else {
+    try {
+      view = buildView(t, L.findRedex(t, state.env));
+      box.append(view.root);
+    } catch (e) {
+      view = null;
+      box.append(h('p', { class: 'empty' }, 'This term is too large or too deep to draw.'));
+      reportError(e);
+    }
+  }
+  applySelection();
+  renderInfo();
+}
+function emptyState() {
+  return h('div', { class: 'empty' },
+    h('p', {}, 'Click a favorite to start. Each later click applies the expression to that favorite, so PLUS, then 2, then 3 builds PLUS 2 3.'),
+    h('p', {}, 'Select a subterm first to replace it, or to give it arguments. You can also type any term below.'),
+    h('div', { class: 'examples' }, h('span', {}, 'Try'),
+      EXAMPLES.map(src => h('button', { type: 'button', class: 'chip', 'data-action': 'example', 'data-arg': src }, src))));
+}
+// Outline the selection and show the □ slot where the next favorite will go.
+function applySelection() {
+  const box = $('expr');
+  box.querySelectorAll('.tm.sel').forEach(el => el.classList.remove('sel'));
+  box.querySelectorAll('.slot, .ghost').forEach(el => el.remove());
+  box.querySelectorAll('.will-replace').forEach(el => el.classList.remove('will-replace'));
+  previewName = null;
+  const id = state.sel && view ? idOfPath(state.sel.path) : null;
+  if (id == null) state.sel = null;
+  else {
+    const el = view.nodes[id].el;
+    el.classList.add('sel');
+    if (state.sel.mode === 'apply') el.after(h('span', { class: 'slot', 'aria-hidden': 'true' }));
+    if (state.sel.mode === 'wrap') el.before(h('span', { class: 'slot', 'aria-hidden': 'true' }));
+  }
+  renderSelBar();
+}
+// Hovering a favorite previews where a click would put it.
+function showPreview(name) {
+  if (name === previewName) return;
+  previewName = name;
+  const box = $('expr');
+  box.querySelectorAll('.ghost').forEach(el => el.remove());
+  box.querySelectorAll('.will-replace').forEach(el => el.classList.remove('will-replace'));
+  box.querySelectorAll('.slot').forEach(el => { el.hidden = false; });
+  if (!name || !view || !state.favorites.some(f => f.name === name)) return;
+  const ghost = h('span', { class: 'ghost', 'aria-hidden': 'true' }, name);
+  const id = state.sel ? idOfPath(state.sel.path) : null;
+  if (id == null) { view.root.after(ghost); return; }
+  const el = view.nodes[id].el;
+  box.querySelectorAll('.slot').forEach(s => { s.hidden = true; });
+  if (state.sel.mode === 'replace') { el.classList.add('will-replace'); el.after(ghost); }
+  else if (state.sel.mode === 'apply') el.after(ghost);
+  else el.before(ghost);
+}
+function setHover(el) {
+  if (el === hoverEl) return;
+  if (hoverEl) hoverEl.classList.remove('hov');
+  hoverEl = el;
+  if (el) el.classList.add('hov');
+}
+// Hovering a variable or λ parameter underlines the binder and everything it binds.
+function showBinder(b) {
+  if (b === binderShown) return;
+  const box = $('expr');
+  if (binderShown != null) box.querySelectorAll('.bind-hi').forEach(el => el.classList.remove('bind-hi'));
+  binderShown = b;
+  if (b != null) box.querySelectorAll(`[data-b="${b}"]`).forEach(el => el.classList.add('bind-hi'));
+}
+
+function renderInfo() {
+  const box = $('expr-info');
+  box.textContent = '';
+  const t = current();
+  if (!t) return;
+  const parts = [];
+  const rx = view && view.redex;
+  if (rx && rx.kind === 'beta') {
+    const at = L.subtermAt(t, rx.path);
+    parts.push(h('span', { class: 'tag' }, 'next'),
+      h('span', {}, 'β  ', h('b', { class: 'c-fn' }, at.fn.param), ' := ', h('b', { class: 'c-arg' }, clip(L.print(at.arg), 56))));
+    if (!L.occursFree(at.fn.param, at.fn.body)) {
+      parts.push(h('span', { class: 'dim' }, `(${at.fn.param} is unused, so the argument is dropped)`));
+    }
+  } else if (rx) {
+    parts.push(h('span', { class: 'tag' }, 'next'),
+      h('span', {}, 'expand ', h('b', { class: 'c-delta' }, rx.name)),
+      h('span', { class: 'dim' }, `↦ ${clip(L.print(L.lookup(state.env, rx.name)), 56)}`));
+  } else {
+    parts.push(h('span', { class: 'tag ok' }, 'normal form'));
+    if (state.history.length > 1) parts.push(h('span', { class: 'dim' }, `after ${plural(state.history.length - 1, 'step')}`));
+  }
+  const names = aliasesFor(state.history[state.history.length - 1]);
+  if (names.length) parts.push(h('span', { class: 'alias' }, `= ${names.join(', ')}`));
+  if (state.note && state.note.kind !== 'ok') {
+    parts.push(h('span', { class: `note ${state.note.kind}` }, state.note.text,
+      state.note.limit ? [h('button', { type: 'button', class: 'link', 'data-action': 'eval' }, 'continue'),
+        h('button', { type: 'button', class: 'link', 'data-action': 'settings.limit' }, 'change the limit')] : null));
+  }
+  box.append(...parts);
+}
+
+const MODE_TITLES = {
+  replace: 'A clicked favorite replaces the selection',
+  apply: 'The selection is applied to a clicked favorite: S F',
+  wrap: 'A clicked favorite is applied to the selection: F S',
+};
+function renderSelBar() {
+  const bar = $('sel-bar');
+  bar.textContent = '';
+  const t = current();
+  if (!t) {
+    bar.append(h('span', { class: 'hint' }, 'The first favorite you click becomes the expression.'));
+    return;
+  }
+  if (!state.sel) {
+    bar.append(h('span', { class: 'hint' },
+      'Favorites are applied to the whole expression. Click a subterm to select it; click it again for the enclosing one.'));
+    return;
+  }
+  const text = L.print(L.subtermAt(t, state.sel.path));
+  const short = text.length <= 12 ? text : 'S';
+  const labels = { replace: 'replace', apply: `${short} □`, wrap: `□ ${short}` };
+  bar.append(
+    h('span', { class: 'hint' }, 'selected'),
+    h('code', { class: 'sel-code', title: clip(text, 400) }, text),
+    h('span', { class: 'hint' }, 'favorite click:'),
+    h('span', { class: 'seg', role: 'group', 'aria-label': 'What a favorite click does' },
+      Object.keys(labels).map(mode => h('button', {
+        type: 'button', class: 'btn small', 'data-action': `mode.${mode}`,
+        'aria-pressed': state.sel.mode === mode ? 'true' : 'false', title: withKeys(MODE_TITLES[mode], `mode.${mode}`),
+      }, labels[mode]))),
+    h('button', {
+      type: 'button', class: 'btn small subtle', 'data-action': 'sel.remove', title: withKeys('Remove the selected subterm', 'sel.remove'),
+    }, 'remove'),
+    h('span', { class: 'hint' }, 'Esc deselects'));
+}
+
+let histShown = { first: null, count: 0, stamp: -1 };
+function renderHistory(full = false) {
+  const ol = $('history');
+  const H = state.history;
+  $('hist-count').textContent = H.length > 1 ? plural(H.length - 1, 'step') : '';
+  ol.querySelectorAll('.h-note').forEach(el => el.remove());
+  const append = !full && H.length > 0 && histShown.first === H[0] && histShown.stamp === state.aliasStamp &&
+    histShown.count > 0 && H.length >= histShown.count && H.length <= MAX_HISTORY_ROWS;
+  if (append) {
+    const prev = ol.querySelector('.h-row.cur');
+    if (prev) prev.classList.remove('cur');
+    for (let i = histShown.count; i < H.length; i++) ol.append(historyRow(i));
+  } else {
+    ol.textContent = '';
+    if (!H.length) {
+      ol.append(h('li', { class: 'h-empty' }, 'Every step shows up here, numbered. Click one to go back to it.'));
+    } else if (H.length > MAX_HISTORY_ROWS) {
+      const from = H.length - (MAX_HISTORY_ROWS - 1);
+      ol.append(historyRow(0), h('li', { class: 'h-gap' }, `… steps 1–${from - 1} not shown …`));
+      for (let i = from; i < H.length; i++) ol.append(historyRow(i));
+    } else {
+      for (let i = 0; i < H.length; i++) ol.append(historyRow(i));
+    }
+  }
+  histShown = { first: H[0] || null, count: H.length, stamp: state.aliasStamp };
+  const rows = ol.querySelectorAll('.h-row');
+  if (rows.length) rows[rows.length - 1].classList.add('cur');
+  if (state.note) ol.append(h('li', { class: `h-note ${state.note.kind}` }, state.note.text));
+  ol.scrollTop = ol.scrollHeight;
+}
+function historyRow(i) {
+  const e = state.history[i];
+  const names = aliasesFor(e);
+  return h('li', { class: 'h-row', 'data-action': 'history.rewind', 'data-arg': i },
+    h('span', { class: 'h-n' }, i),
+    h('span', { class: 'h-t' }, clip(printed(e), 600)),
+    e.label || names.length ? h('span', { class: 'h-meta' },
+      e.label ? h('span', { class: `h-kind ${e.label === 'β' ? 'beta' : 'delta'}` }, e.label) : null,
+      names.length ? h('span', { class: 'h-alias' }, `= ${names.join(', ')}`) : null) : null);
+}
+
+function renderFooter() {
+  const f = $('footer');
+  f.textContent = '';
+  const item = (keys, text) => { if (keys) f.append(h('span', {}, h('kbd', {}, keys), ' ', text)); };
+  item(keyLabel('step'), 'step');
+  item(keyLabel('undo'), 'undo');
+  item(keyLabel('eval'), 'eval');
+  item('Esc', 'deselect');
+  item(['sel.prev', 'sel.next', 'sel.parent', 'sel.child'].map(keyLabel).filter(Boolean).join(' '), 'move selection');
+  item(keyLabel('palette'), 'commands');
+  item(keyLabel('help'), 'all shortcuts');
+  if (storageFailed) f.append(h('span', { class: 'note warn' }, '⚠ not saving: browser storage is unavailable'));
+  f.append(h('span', { class: 'spacer' }),
+    h('span', {}, 'runTests() in the console, or '),
+    h('button', { type: 'button', class: 'link', 'data-action': 'tests' }, 'run the self-tests'));
+}
+
+// Messages
+let statusTimer = 0;
+function status(text, kind = 'info') {
+  const el = $('status');
+  el.textContent = text;
+  el.className = `msg ${kind}`;
+  clearTimeout(statusTimer);
+  if (text && kind !== 'error') statusTimer = setTimeout(() => { el.textContent = ''; }, 8000);
+}
+function termMsg(text, kind = 'info') {
+  const el = $('term-msg');
+  el.textContent = text;
+  el.className = `msg ${kind}`;
+}
+let toastSeq = 0;
+// A toast with an Undo button follows every destructive change.
+function toast(text, { undoAction = null, transient = false } = {}) {
+  const box = $('toasts');
+  if (undoAction) box.querySelectorAll('.toast.undoable').forEach(t => t.remove());   // Undo is for the latest change
+  const id = `toast-${++toastSeq}`;
+  const el = h('div', { class: `toast${undoAction ? ' undoable' : ''}${transient ? ' transient' : ''}`, id, role: 'status' },
+    h('span', {}, text),
+    undoAction ? h('button', { type: 'button', class: 'btn small', 'data-action': undoAction }, 'Undo') : null,
+    h('button', { type: 'button', class: 'toast-x', 'data-action': 'toast.dismiss', 'data-arg': id, 'aria-label': 'Dismiss' }, '×'));
+  box.append(el);
+  while (box.children.length > 3) box.firstElementChild.remove();
+  setTimeout(() => el.remove(), undoAction ? 9000 : 4500);
+}
+function dismissToasts(transientOnly = false) {
+  $('toasts').querySelectorAll(transientOnly ? '.toast.transient' : '.toast').forEach(t => t.remove());
+}
+function updateSaveButton() {
+  const el = $('save-name');
+  const upper = el.value.toUpperCase();
+  if (upper !== el.value) {
+    const pos = el.selectionStart;
+    el.value = upper;
+    el.setSelectionRange(pos, pos);
+  }
+  const name = upper.trim();
+  $('save-btn').textContent = name && state.favorites.some(f => f.name === name) ? 'Replace' : 'Save';
+}
+
+/* ── 11. Keyboard ──────────────────────────────────────────────────────── */
+const KEY_LABELS = {
+  Mod: isMac ? '⌘' : 'Ctrl', Ctrl: isMac ? '⌃' : 'Ctrl', Alt: isMac ? '⌥' : 'Alt', Shift: isMac ? '⇧' : 'Shift', Meta: 'Win',
+  Space: 'Space', Backspace: isMac ? '⌫' : 'Backspace', Delete: isMac ? '⌦' : 'Del', Enter: 'Enter', Escape: 'Esc',
+  ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
+};
+// KeyboardEvent → "Mod+Shift+K" style combo; null for a lone modifier.
+function comboOf(e) {
+  let key = e.key;
+  if (!key || ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Dead', 'Unidentified', 'Process', 'AltGraph'].includes(key)) return null;
+  if (key === ' ' || key === 'Spacebar') key = 'Space';
+  if (key === 'Esc') key = 'Escape';
+  if (key.length === 1) key = key.toUpperCase();
+  const parts = [];
+  if (isMac ? e.metaKey : e.ctrlKey) parts.push('Mod');
+  if (isMac && e.ctrlKey) parts.push('Ctrl');
+  if (!isMac && e.metaKey) parts.push('Meta');
+  if (e.altKey) parts.push('Alt');
+  if (e.shiftKey && (key.length > 1 || /^[A-Z]$/.test(key))) parts.push('Shift');   // "?" already implies Shift
+  parts.push(key);
+  return parts.join('+');
+}
+function comboLabel(combo) {
+  const parts = combo.endsWith('++') ? [...combo.slice(0, -2).split('+').filter(Boolean), '+'] : combo.split('+');
+  return parts.map(p => KEY_LABELS[p] || p).join(isMac ? '' : '+');
+}
+const bindingsOf = id => state.keymap[id] || DEFAULT_KEYMAP[id] || [];
+const keyLabel = id => (bindingsOf(id)[0] ? comboLabel(bindingsOf(id)[0]) : '');
+const idsForCombo = combo => [...actions.keys()].filter(id => bindingsOf(id).includes(combo));
+const withKeys = (text, id) => (keyLabel(id) ? `${text} (${keyLabel(id)})` : text);
+
+function onKeyDown(e) {
+  if (capture) return captureKey(e);
+  if (e.key === 'Escape' || e.key === 'Esc') return onEscape(e);
+  if (e.isComposing || e.defaultPrevented) return;
+  const target = e.target instanceof Element ? e.target : document.body;
+  if (isTyping(target) || target.closest('.panel, .palette')) return;   // fields and panels keep their keys
+  const combo = comboOf(e);
+  if (!combo) return;
+  const id = idsForCombo(combo)[0];
+  if (!id) return;
+  // Enter on a focused control activates that control instead of Eval.
+  if (combo === 'Enter' && target.closest('button, a[href], input, select, summary')) return;
+  if (target.tagName === 'INPUT' && /^(radio|checkbox)$/.test(target.type) && /^(Space|Arrow)/.test(combo)) return;
+  if (!actions.get(id).enabled()) return;           // e.g. arrows scroll the page when there is no term
+  e.preventDefault();
+  runAction(id);
+}
+// Space would also "click" a focused button on key-up; here Space means Step.
+let swallowKeyUp = false;
+function onKeyUp(e) {
+  if (swallowKeyUp) { swallowKeyUp = false; e.preventDefault(); return; }   // the key that was just bound
+  const target = e.target instanceof Element ? e.target : null;
+  const onButton = target && !isTyping(target) && target.closest('button') && !target.closest('.panel, .palette');
+  if ((e.key === ' ' || e.key === 'Spacebar') && onButton) e.preventDefault();
+}
+function onEscape(e) {
+  const top = ['palette', 'help', 'settings'].find(id => !$(id).hidden);
+  if (top) { e.preventDefault(); return closePanel(top); }
+  if (state.run) { e.preventDefault(); return stopRun(); }
+  if (isTyping(e.target)) return e.target.blur();
+  if (state.sel) { e.preventDefault(); clearSelection(); }
+}
+
+/* ── 12. Panels: settings, shortcuts, command palette ──────────────────── */
+let returnFocus = null;
+function openPanel(id) {
+  if (id !== 'palette') for (const other of ['help', 'settings']) if (other !== id) hidePanel(other);
+  const el = $(id);
+  if (!el.hidden) return;
+  if (!document.activeElement || !document.activeElement.closest('.panel, .palette')) returnFocus = document.activeElement;
+  el.hidden = false;
+  if (id === 'settings') renderSettings();
+  if (id === 'help') renderHelp();
+  if (id === 'palette') {
+    $('pal-input').value = '';
+    palIndex = 0;
+    renderPalette();
+    $('pal-input').focus();
+  } else el.querySelector('.panel-h .btn').focus();
+}
+function hidePanel(id) {
+  $(id).hidden = true;
+  if (id === 'help') capture = null;
+  if (id === 'settings') { pendingRestore = null; hideInline('restore-choice'); hideInline('clear-choice'); }
+}
+function closePanel(id) {
+  if ($(id).hidden) return;
+  hidePanel(id);
+  const back = returnFocus;
+  returnFocus = null;
+  if (back && back.isConnected && back !== document.body && typeof back.focus === 'function') back.focus();
+  else if (document.activeElement && document.activeElement.closest('.panel, .palette')) document.activeElement.blur();
+}
+function togglePanel(id) { if ($(id).hidden) openPanel(id); else closePanel(id); }
+function closeTopPanel() { const top = ['palette', 'help', 'settings'].find(id => !$(id).hidden); if (top) closePanel(top); }
+
+// Settings
+function renderSettings() {
+  const list = $('theme-list');
+  list.textContent = '';
+  for (const t of THEMES) {
+    list.append(h('label', { class: 'theme-opt' },
+      h('input', { type: 'radio', name: 'theme', value: t.id, checked: state.settings.theme === t.id }),
+      h('span', { class: 'swatch', 'data-theme': t.id, 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
+      t.label));
+  }
+  const limit = $('set-limit');
+  limit.value = state.settings.stepLimit;
+  limit.classList.remove('invalid');
+  $('limit-hint').textContent = `Eval stops after this many steps. Default ${L.STEP_LIMIT}.`;
+}
+function applyTheme() {
+  document.documentElement.setAttribute('data-theme', state.settings.theme);
+  document.querySelectorAll('#theme-list input').forEach(r => { r.checked = r.value === state.settings.theme; });
+  const theme = THEMES.find(t => t.id === state.settings.theme);
+  const btn = document.querySelector('.topbar [data-action="theme.next"]');
+  if (btn && theme) btn.title = withKeys(`Theme: ${theme.label}. Click for the next one`, 'theme.next');
+}
+function setTheme(id) {
+  if (!THEMES.some(t => t.id === id)) return;
+  state.settings = { ...state.settings, theme: id };
+  applyTheme();
+  writeStore();
+}
+function nextTheme() {
+  const i = THEMES.findIndex(t => t.id === state.settings.theme);
+  const next = THEMES[(i + 1) % THEMES.length];
+  setTheme(next.id);
+  status(`Theme: ${next.label}`);
+}
+function onLimitInput() {
+  const el = $('set-limit');
+  const v = Number(el.value);
+  const ok = Number.isInteger(v) && v >= 1 && v <= MAX_STEP_LIMIT;
+  el.classList.toggle('invalid', !ok);
+  $('limit-hint').textContent = ok
+    ? `Eval stops after ${plural(v, 'step')}. Default ${L.STEP_LIMIT}.`
+    : `Use a whole number from 1 to ${MAX_STEP_LIMIT}.`;
+  if (ok && v !== state.settings.stepLimit) {
+    state.settings = { ...state.settings, stepLimit: v };
+    writeStore();
+  }
+}
+function focusLimit() {
+  openPanel('settings');
+  const el = $('set-limit');
+  el.focus();
+  el.select();
+}
+function resetSettings() {
+  const before = { settings: { ...state.settings }, keymap: state.keymap };
+  pushChange('reset settings', () => { state.settings = before.settings; state.keymap = before.keymap; settingsChanged(); });
+  state.settings = defaultSettings();
+  state.keymap = {};
+  settingsChanged();
+  toast('Settings reset to their defaults', { undoAction: 'change.undo' });
+}
+function settingsChanged() {
+  applyTheme();
+  if (!$('settings').hidden) renderSettings();
+  keymapChanged();
+}
+const showInline = (id, children, bad = false) => {
+  const box = $(id);
+  box.textContent = '';
+  box.className = `inline-choice${bad ? ' bad' : ''}`;
+  box.append(...children);
+  box.hidden = false;
+};
+const hideInline = id => { $(id).hidden = true; };
+
+// Shortcuts pane: generated from the keymap; click a binding to change it.
+function renderHelp() {
+  const box = $('help-list');
+  box.textContent = '';
+  const groups = new Map(GROUP_ORDER.map(g => [g, []]));
+  for (const a of actions.values()) if (a.palette) groups.get(a.group).push(a);
+  for (const [group, list] of groups) {
+    if (!list.length) continue;
+    const section = h('section', { class: 'panel-s key-group' }, h('h3', {}, group));
+    for (const a of list) {
+      if (a.id === 'sel.clear') {            // Escape is fixed, not rebindable
+        section.append(h('div', { class: 'key-row' },
+          h('span', { class: 'label' }, 'Clear the selection (also closes a panel, stops Eval, leaves a field)'),
+          h('span', { class: 'key-fixed' }, 'Esc'), h('span', { class: 'btn small subtle unbind', 'aria-hidden': 'true' }, '×')));
+        continue;
+      }
+      const combos = bindingsOf(a.id);
+      const shared = combos.flatMap(c => idsForCombo(c).filter(x => x !== a.id)).map(x => actions.get(x).label);
+      section.append(h('div', { class: 'key-row' },
+        h('span', { class: 'label' }, a.label,
+          shared.length ? h('span', { class: 'warnmark' }, ` ⚠ same key as: ${shared.join('; ')}`) : null),
+        h('button', { type: 'button', class: `btn small key-btn${capture === a.id ? ' capturing' : ''}`,
+          'data-action': 'keys.capture', 'data-arg': a.id, title: 'Click, then press the new keys' },
+          capture === a.id ? 'press keys…' : combos.length ? combos.map(comboLabel).join(' / ') : '—'),
+        h('button', { type: 'button', class: 'btn small subtle unbind', 'data-action': 'keys.unbind', 'data-arg': a.id,
+          disabled: !combos.length, 'aria-label': `Remove the shortcut for ${a.label}` }, '×')));
+    }
+    box.append(section);
+  }
+}
+function startCapture(id) {
+  capture = id;
+  renderHelp();
+  const btn = [...$('help-list').querySelectorAll('.key-btn')].find(b => b.dataset.arg === id);
+  if (btn) btn.focus();
+}
+function captureKey(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.key === 'Escape' || e.key === 'Esc') { capture = null; renderHelp(); return; }
+  const combo = comboOf(e);
+  if (!combo) return;                       // a lone modifier: keep listening
+  const id = capture;
+  capture = null;
+  swallowKeyUp = true;
+  state.keymap = { ...state.keymap, [id]: [combo] };
+  keymapChanged();
+  const btn = [...$('help-list').querySelectorAll('.key-btn')].find(b => b.dataset.arg === id);
+  if (btn) btn.focus();
+  const others = idsForCombo(combo).filter(x => x !== id);
+  status(others.length
+    ? `${comboLabel(combo)} now also triggers “${actions.get(others[0]).label}”. The first one listed wins until you change one.`
+    : `${actions.get(id).label}: ${comboLabel(combo)}`, others.length ? 'warn' : 'ok');
+}
+function unbindKey(id) { state.keymap = { ...state.keymap, [id]: [] }; keymapChanged(); }
+function resetKeys() {
+  const before = state.keymap;
+  pushChange('reset shortcuts', () => { state.keymap = before; keymapChanged(); });
+  state.keymap = {};
+  keymapChanged();
+  toast('Shortcuts reset to their defaults', { undoAction: 'change.undo' });
+}
+function keymapChanged() {
+  if (!$('help').hidden) renderHelp();
+  renderKeyHints();
+  renderFooter();
+  renderSelBar();
+  writeStore();
+}
+function renderKeyHints() {
+  document.querySelectorAll('[data-kbd]').forEach(el => { el.textContent = keyLabel(el.dataset.kbd); });
+  const fixed = '.topbar [data-action], .pane-foot [data-action], .pane-h [data-action], .panel [data-action="help"]';
+  document.querySelectorAll(fixed).forEach(el => {
+    const a = actions.get(el.dataset.action);
+    if (a) el.title = withKeys(a.label, a.id);
+  });
+  applyTheme();
+}
+
+// Command palette: fuzzy search over the registry and the favorites.
+let palIndex = 0, palItems = [];
+function paletteItems() {
+  const items = [];
+  for (const a of actions.values()) {
+    if (a.palette) items.push({ key: a.id, id: a.id, label: a.label, detail: a.group, keys: keyLabel(a.id) });
+  }
+  for (const f of state.favorites) {
+    items.push({ key: `fav:${f.name}`, id: 'fav.insert', arg: f.name, label: `Insert ${f.name}`, detail: clip(L.print(f.term), 60) });
+  }
+  return items;
+}
+function fuzzyScore(query, text) {
+  const q = query.toLowerCase().replace(/\s+/g, ''), t = text.toLowerCase();
+  if (!q) return 0;
+  let score = t.includes(query.toLowerCase().trim()) ? 12 : 0, from = 0, last = -2, run = 0;
+  for (const ch of q) {
+    const i = t.indexOf(ch, from);
+    if (i < 0) return -1;
+    run = i === last + 1 ? run + 1 : 0;
+    score += 1 + run * 3 + (i === 0 || /[\s.\-_(/]/.test(t[i - 1]) ? 5 : 0);
+    last = i;
+    from = i + 1;
+  }
+  return score - t.length * 0.02;
+}
+function filterPalette(query) {
+  const items = paletteItems();
+  const rank = new Map(state.recent.map((k, i) => [k, i]));
+  if (!query.trim()) {
+    const recent = state.recent.map(k => items.find(it => it.key === k)).filter(Boolean).map(it => ({ ...it, recent: true }));
+    return [...recent, ...items.filter(it => !rank.has(it.key) && it.id !== 'fav.insert')];
+  }
+  return items
+    .map(it => ({ it, s: fuzzyScore(query, it.label) }))
+    .filter(x => x.s >= 0)
+    .map(x => ({ ...x, s: x.s + (rank.has(x.it.key) ? 6 - rank.get(x.it.key) * 0.5 : 0) }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, 60)
+    .map(x => ({ ...x.it, recent: rank.has(x.it.key) }));
+}
+function renderPalette() {
+  palItems = filterPalette($('pal-input').value);
+  palIndex = Math.min(palIndex, Math.max(0, palItems.length - 1));
+  const list = $('pal-list');
+  list.textContent = '';
+  if (!palItems.length) list.append(h('li', { class: 'pal-empty' }, 'No matching command or favorite'));
+  palItems.forEach((it, i) => list.append(h('li', {
+    class: `pal-item${i === palIndex ? ' active' : ''}`, role: 'option', id: `pal-${i}`, 'data-i': i,
+    'aria-selected': i === palIndex ? 'true' : 'false',
+  },
+  h('span', { class: 'pal-label' }, it.label),
+  h('span', { class: 'pal-detail' }, it.detail || ''),
+  it.recent ? h('span', { class: 'pal-tag' }, 'recent') : null,
+  it.keys ? h('kbd', {}, it.keys) : null)));
+  $('pal-input').setAttribute('aria-activedescendant', palItems.length ? `pal-${palIndex}` : '');
+}
+function setPalIndex(i) {
+  const list = $('pal-list');
+  const prev = list.querySelector('.pal-item.active');
+  if (prev) { prev.classList.remove('active'); prev.setAttribute('aria-selected', 'false'); }
+  palIndex = i;
+  const el = document.getElementById(`pal-${i}`);
+  if (el) { el.classList.add('active'); el.setAttribute('aria-selected', 'true'); el.scrollIntoView({ block: 'nearest' }); }
+  $('pal-input').setAttribute('aria-activedescendant', el ? el.id : '');
+}
+function runPaletteItem(it) {
+  if (!it) return;
+  closePanel('palette');
+  state.recent = [it.key, ...state.recent.filter(k => k !== it.key)].slice(0, 8);
+  writeStore();
+  runAction(it.id, it.arg);
+}
+
+/* ── 13. Data: backup, restore, clear ──────────────────────────────────── */
+function fullSnapshot() {
+  const data = snapshotData(), history = state.history.slice(), editUndo = state.editUndo.slice();
+  return () => {
+    applyData(data);
+    state.history = history;
+    state.editUndo = editUndo;
+    applyTheme();
+    renderAll();
+    writeStore();
+  };
+}
+function backupData() {
+  const now = new Date();
+  const json = JSON.stringify({ app: STORE_KEY, exportedAt: now.toISOString(), data: snapshotData() }, null, 2);
+  download(`lambda-workbench-backup-${now.toISOString().slice(0, 10)}.json`, json, 'application/json');
+  status('Backup downloaded.', 'ok');
+}
+async function readBackup(file) {
+  let parsed = null;
+  try { parsed = JSON.parse(await file.text()); } catch { parsed = null; }
+  const data = parsed && parsed.app === STORE_KEY ? migrate(parsed.data) : null;
+  if (!data || typeof data.favorites !== 'string') {
+    pendingRestore = null;
+    return showInline('restore-choice', [h('p', {}, `${file.name} is not a λ workbench backup, so nothing was changed.`)], true);
+  }
+  const favorites = favoritesFromText(data.favorites);
+  pendingRestore = { data, favorites, file: file.name };
+  const when = typeof parsed.exportedAt === 'string' ? `, backed up ${parsed.exportedAt.slice(0, 10)}` : '';
+  showInline('restore-choice', [
+    h('p', {}, `${file.name}: ${plural(favorites.length, 'favorite')}${when}.`),
+    h('div', { class: 'btn-row' },
+      h('button', { type: 'button', class: 'btn small', 'data-action': 'data.restore.replace' }, 'Replace everything'),
+      h('button', { type: 'button', class: 'btn small', 'data-action': 'data.restore.merge' }, 'Merge favorites'),
+      h('button', { type: 'button', class: 'btn small subtle', 'data-action': 'data.restore.cancel' }, 'Cancel')),
+  ]);
+}
+function applyRestore(mode) {
+  if (!pendingRestore) return;
+  const { data, favorites, file } = pendingRestore;
+  pendingRestore = null;
+  hideInline('restore-choice');
+  const undo = fullSnapshot();
+  let skipped = 0;
+  if (mode === 'replace') {
+    applyData(data);
+    applyTheme();
+    renderAll();
+    writeStore();
+  } else {
+    const merged = mergeFavorites(state.favorites, favorites);
+    state.favorites = favoritesFromText(L.serializeDefinitions(merged, { header: false }));
+    skipped = merged.length - state.favorites.length;
+    favoritesChanged();
+  }
+  pushChange(`restore ${file}`, undo);
+  toast(mode === 'replace' ? 'Restored everything from the backup'
+    : `Merged the backup's favorites${skipped ? ` (${skipped} skipped: circular names)` : ''}`, { undoAction: 'change.undo' });
+}
+function askClearData() {
+  showInline('clear-choice', [
+    h('p', {}, 'Erase favorites, settings, shortcuts and the current run, and start again from the defaults? You can back up first.'),
+    h('div', { class: 'btn-row' },
+      h('button', { type: 'button', class: 'btn small', 'data-action': 'data.backup' }, 'Back up first'),
+      h('button', { type: 'button', class: 'btn small danger', 'data-action': 'data.clear.confirm' }, 'Erase everything'),
+      h('button', { type: 'button', class: 'btn small subtle', 'data-action': 'data.clear.cancel' }, 'Cancel')),
+  ]);
+}
+function clearAllData() {
+  hideInline('clear-choice');
+  const undo = fullSnapshot();
+  try { localStorage.removeItem(STORE_KEY); } catch { /* nothing stored */ }
+  applyData(null);
+  state.changes = [];
+  applyTheme();
+  renderAll();
+  if (!$('settings').hidden) renderSettings();
+  pushChange('clear all data', undo);
+  toast('All data cleared, defaults restored', { undoAction: 'change.undo' });
+}
+function runSelfTests() {
+  const r = L.runTests();
+  const failed = r.results.filter(x => !x.ok);
+  status(failed.length
+    ? `Self-tests: ${r.passed} of ${r.results.length} passed. Failed: ${failed.map(x => x.name).join('; ')}`
+    : `Self-tests: all ${r.passed} passed (details in the console).`, failed.length ? 'error' : 'ok');
+}
+
+/* ── 14. Wiring and start-up ───────────────────────────────────────────── */
+function bindEvents() {
+  // Every [data-action] element runs its action by id.
+  document.addEventListener('click', e => {
+    const el = e.target instanceof Element && e.target.closest('[data-action]');
+    if (!el || el.disabled) return;
+    if (!el.closest('form, .panel, .palette')) blurTyping();
+    runAction(el.dataset.action, el.dataset.arg);
+    const t = el.closest('.toast');
+    if (t && el.dataset.action !== 'toast.dismiss') t.remove();
+  });
+  // A mouse click should not leave focus on a button, so Space and Enter keep
+  // meaning Step and Eval afterwards. Keyboard focus (Tab) is unaffected.
+  document.addEventListener('mousedown', e => {
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target) return;
+    if (!$('palette').hidden && !target.closest('.palette')) closePanel('palette');
+    if (target.closest('button') && !target.closest('.panel, .palette')) e.preventDefault();
+  });
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('keyup', onKeyUp);
+
+  // Expression: click selects, hover outlines the subterm and shows binders.
+  const expr = $('expr');
+  $('expr-wrap').addEventListener('click', e => {
+    if (e.target.closest('[data-action]')) return;
+    const el = e.target.closest('#expr [data-id]');
+    if (el) runAction('sel.pick', Number(el.dataset.id));
+    else if (state.sel) runAction('sel.clear');
+  });
+  expr.addEventListener('mouseover', e => {
+    setHover(e.target.closest('[data-id]'));
+    const b = e.target.closest('[data-b]');
+    showBinder(b ? b.dataset.b : null);
+  });
+  expr.addEventListener('mouseleave', () => { setHover(null); showBinder(null); });
+
+  // Favorites: hovering or focusing one previews where a click puts it.
+  const favList = $('fav-list');
+  const favUnder = e => { const b = e.target.closest('.fav-btn'); return b ? b.dataset.arg : null; };
+  favList.addEventListener('mouseover', e => showPreview(favUnder(e)));
+  favList.addEventListener('mouseleave', () => showPreview(null));
+  favList.addEventListener('focusin', e => showPreview(favUnder(e)));
+  favList.addEventListener('focusout', () => showPreview(null));
+
+  // Typed terms and saving
+  $('term-form').addEventListener('submit', e => { e.preventDefault(); submitTerm(); });
+  $('term-input').addEventListener('input', e => {
+    const el = e.target;
+    if (el.value.includes('\\')) {                  // \ is shorthand for λ
+      const pos = el.selectionStart;
+      el.value = el.value.replace(/\\/g, 'λ');
+      el.setSelectionRange(pos, pos);
+    }
+    if ($('term-msg').textContent) termMsg('');
+  });
+  $('save-form').addEventListener('submit', e => { e.preventDefault(); runAction('save'); });
+  $('save-name').addEventListener('input', updateSaveButton);
+  $('file-defs').addEventListener('change', e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (file) importFavorites(file);
+  });
+  $('file-backup').addEventListener('change', e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (file) readBackup(file);
+  });
+
+  // Settings
+  $('theme-list').addEventListener('change', e => { if (e.target.name === 'theme') runAction('theme.set', e.target.value); });
+  $('set-limit').addEventListener('input', onLimitInput);
+  $('set-limit').addEventListener('blur', () => {
+    if ($('set-limit').classList.contains('invalid')) { $('set-limit').value = state.settings.stepLimit; onLimitInput(); }
+  });
+
+  // Palette
+  const palInput = $('pal-input');
+  palInput.addEventListener('input', () => { palIndex = 0; renderPalette(); });
+  palInput.addEventListener('keydown', e => {
+    const n = palItems.length;
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && n) {
+      e.preventDefault();
+      setPalIndex((palIndex + (e.key === 'ArrowDown' ? 1 : -1) + n) % n);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      runPaletteItem(palItems[palIndex]);
+    } else if (e.key === 'Tab') e.preventDefault();
+  });
+  const palList = $('pal-list');
+  palList.addEventListener('mousedown', e => e.preventDefault());          // keep focus in the input
+  palList.addEventListener('mousemove', e => {
+    const li = e.target.closest('.pal-item');
+    if (li && Number(li.dataset.i) !== palIndex) setPalIndex(Number(li.dataset.i));
+  });
+  palList.addEventListener('click', e => {
+    const li = e.target.closest('.pal-item');
+    if (li) runPaletteItem(palItems[Number(li.dataset.i)]);
+  });
+}
+
+function init() {
+  registerActions();
+  applyData(readStore());
+  applyTheme();
+  bindEvents();
+  renderAll();
+}
+init();
+})();
+</script>
+</body>
+</html>
